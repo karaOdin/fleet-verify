@@ -179,5 +179,5 @@ cp .env.example .env      # POSTGRES_PASSWORD, VIZ_ADMIN_TOKEN, tokens
 
 Every published port binds to 127.0.0.1 (Docker-published ports bypass ufw); Kafka and PostgreSQL publish none.
 The host's nginx proxies `pipeline.devcloud.dz` to 127.0.0.1:8000; Dagster is reached through an SSH tunnel
-(`deploy/DEPLOY.md`). No kafka-ui, dagster-daemon or Superset on this server: each container has a `mem_limit`,
+(`deploy/DEPLOY.md`: nginx blocks, DNS, unlock, morning checklist). No kafka-ui, dagster-daemon or Superset on this server: each container has a `mem_limit`,
 and the stack measured 473 MiB idle, 818 MiB during a ×120 replay, 1,011 MiB during the batch (limit 2.2 GiB).
