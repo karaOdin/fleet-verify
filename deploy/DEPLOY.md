@@ -121,7 +121,7 @@ panel then shows. Viewers never see it. `https://pipeline.devcloud.dz/#lock` for
 
 ## Memory (limit for the whole stack: 2.2 GiB)
 
-Each container has a `mem_limit` (= `memswap_limit`): kafka 640 MiB (heap 384 MiB), postgres 192 MiB
+Each container has a `mem_limit` (= `memswap_limit`): kafka 900 MiB (heap 384 MiB; the rest is page cache and off-heap), postgres 192 MiB
 (shared_buffers 64MB, max_connections 20), viz 1052 MiB (the replay, live_trips and the batch run inside it),
 lake-sink 256 MiB, dagster-web 512 MiB (only on demand). Measured with `docker stats`:
 
@@ -146,5 +146,5 @@ With the Dagster UI on during the talk, expect about 1.45 GiB at the peak.
    Bus R's 14:12 alert at ~4:30, the replay ends at ~9:17. Pause / resume, then Run the batch (~49 s to four green
    checks).
 6. `./run-vps.sh reset`: the top lane idle, the bottom lane grey for 19 Nov.
-7. If Kafka shows close to its limit in `status` (640 MiB), `docker restart fleet-kafka` before the talk.
+7. If Kafka shows close to its limit in `status` (900 MiB), `docker restart fleet-kafka` before the talk.
 8. Fallback if Kafka fails on stage: the "No Kafka: same logic from the file" button.

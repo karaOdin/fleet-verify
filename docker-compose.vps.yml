@@ -6,8 +6,9 @@
 #   Kafka and PostgreSQL publish no ports: reachable only inside the compose network.
 #
 # Memory: a mem_limit on every container (memswap_limit equal, so the limit is RAM and not swap). The always-on
-# containers add up to 2,140 MiB, under the 2.2 GiB budget; the batch runs inside viz, so a batch cannot raise
-# the total. dagster-web (512 MiB) is extra and only runs when asked for.
+# limits add up to 2,400 MiB; Kafka's 900 MiB holds a 384 MiB heap plus page cache the kernel can reclaim, and
+# measured use stays under the 2.2 GiB budget (run-vps.sh status). The batch runs inside viz. dagster-web
+# (512 MiB) is extra and only runs when asked for.
 # No kafka-ui, no dagster-daemon, no Superset on this server (3.8 GiB, shared).
 name: fleet
 
@@ -32,8 +33,8 @@ services:
     image: apache/kafka:3.8.0
     container_name: fleet-kafka
     restart: unless-stopped
-    mem_limit: 640m
-    memswap_limit: 640m
+    mem_limit: 900m
+    memswap_limit: 900m
     environment:
       KAFKA_HEAP_OPTS: "-Xmx384m -Xms384m"
       KAFKA_NODE_ID: 1
