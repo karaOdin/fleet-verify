@@ -2,6 +2,7 @@
 # The fleet stack on the VPS (docker-compose.vps.yml, project "fleet", containers fleet-*).
 #
 #   ./run-vps.sh up                 build if needed and start (kafka, postgres, viz, lake-sink)
+#   ./run-vps.sh prepare            before the talk: up, Dagster web UI on, demo reset, status
 #   ./run-vps.sh stop               stop every fleet container (volumes and data kept)
 #   ./run-vps.sh reset              back to the start of the demo: stops what the page started, clears the
 #                                   live state, day 19's results, the Kafka topics and every consumer group's
@@ -31,6 +32,11 @@ case "${1:-}" in
   up)
     "${DC[@]}" up -d --build
     wait_viz ;;
+  prepare)                          # before the talk
+    "$0" up
+    "$0" dagster start                # dagster.devcloud.dz (password) during the talk; ~310 MiB more
+    "$0" reset
+    "$0" status ;;
   stop|down)
     "${DC[@]}" --profile dagster stop ;;
   reset)
@@ -57,5 +63,5 @@ case "${1:-}" in
     "${DC[@]}" up -d
     wait_viz ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

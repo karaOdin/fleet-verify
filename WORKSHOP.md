@@ -24,6 +24,12 @@
 4. `.env`: `VIZ_ANONYMIZE=1`، `FLEET_POSITIONS_PREFER=inbox`، `VIZ_ADMIN_TOKEN`.
 5. لا Traccar حي ولا API حي على المسرح: الإعادة فقط. لا أرقام حافلات، لا أرقام مستلمين، لا شيء عن التحقيق.
 
+## On the VPS before the talk
+
+`./run-vps.sh prepare`: starts the stack, starts the Dagster web UI (https://dagster.devcloud.dz, user `fleet`,
+password in `/home/ploi/fleet-secrets/dagster-password.txt`), resets the demo, prints memory. Open the page once as
+`https://pipeline.devcloud.dz/#admin=<VIZ_ADMIN_TOKEN>` on the presenting laptop. Details: `deploy/DEPLOY.md`.
+
 ## Timing at ×120 from 05:30 (measured on the VPS)
 
 The whole replay takes 9 min 17 s (288,900 positions). Off-route alerts appear on the page (real time after pressing replay):
