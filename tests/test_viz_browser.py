@@ -6,12 +6,13 @@ Skipped unless the page answers at VIZ_URL (default http://localhost:8000) with 
 It drives the real demo: it starts with a clean start and leaves the day's batch results in place,
 so run `python -m tools.reset_demo --kafka` before the talk.
 
-    uvicorn viz.server:app --port 8000 &   pytest -q tests/test_viz_browser.py
+    uvicorn viz.server:app --port 8000 &   pytest -q tests/test_viz_browser.py   (VIZ_ADMIN_TOKEN set in both)
 """
 import json
 import os
 import re
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -35,7 +36,8 @@ def _ready() -> bool:
     return bool(s and s["kafka"]["ok"])
 
 
-pytestmark = pytest.mark.skipif(not _ready(), reason=f"viz page not running at {URL} (or Kafka down)")
+pytestmark = [pytest.mark.skipif(not _ready(), reason=f"viz page not running at {URL} (or Kafka down)"),
+              pytest.mark.skipif(not TOKEN, reason="VIZ_ADMIN_TOKEN not set: the page shows no controls")]
 
 
 def _wait(cond, timeout: float, every: float = 1.0, what: str = ""):
@@ -73,9 +75,15 @@ def test_workshop_run_in_browser():
         page = browser.new_page(viewport={"width": 1366, "height": 900}, locale="ar", reduced_motion="reduce")
         page.goto(URL + "/", wait_until="domcontentloaded")
         expect(page.locator("#k-txt")).to_have_text("Kafka متصل", timeout=20_000)
-        if TOKEN:
-            page.fill("#token", TOKEN)
-            page.dispatch_event("#token", "change")
+        # a viewer sees no controls; a wrong token does not show them either
+        expect(page.locator("#ctl")).to_be_hidden()
+        page.goto(URL + "/#admin=not-the-token", wait_until="domcontentloaded")
+        page.wait_for_timeout(1_500)
+        expect(page.locator("#ctl")).to_be_hidden()
+        # the presenter opens the page once with the token in the fragment; it leaves the address bar
+        page.goto(URL + "/#admin=" + urllib.parse.quote(TOKEN, safe=""), wait_until="domcontentloaded")
+        expect(page.locator("#ctl")).to_be_visible(timeout=10_000)
+        assert "#admin" not in page.url
         # x60: the lag must fall because the consumer is faster than the input, whatever else runs on the
         # machine. At x120 live_trips is close to its limit on a busy laptop (see WORKSHOP.md).
         expect(page.locator("#speed")).to_have_value("120")      # the page's default

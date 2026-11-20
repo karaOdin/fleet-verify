@@ -5,8 +5,10 @@ Kafka offsets and lag, Dagster outputs in the warehouse, PostgreSQL).
     uvicorn viz.server:app --host 0.0.0.0 --port 8000
 
 Controls (start a replay, stop the stream processor to show lag, run the daily
-batch) need the header X-Admin-Token = VIZ_ADMIN_TOKEN. Without that variable,
-controls are accepted only from the same machine.
+batch) need the header X-Admin-Token = VIZ_ADMIN_TOKEN. Without that variable every
+control request is refused. The client address is never used: behind nginx every
+request comes from 127.0.0.1. The page shows the control panel only after
+/api/auth accepts the token (open the page once as /#admin=<token>).
 """
 from __future__ import annotations
 
@@ -348,12 +350,20 @@ ALERTS_TAIL = Tail(STATE / "alerts.jsonl", _public_alert)
 
 # ---------------- HTTP ----------------
 
+def _token_ok(request: Request) -> bool:
+    """True only for the right X-Admin-Token. No token configured = no controls for anyone,
+    and the client address (127.0.0.1 behind the proxy, or an X-Forwarded-For header) counts for nothing."""
+    if not ADMIN:
+        return False
+    given = request.headers.get("x-admin-token", "")
+    return secrets.compare_digest(given.encode("utf-8"), ADMIN.encode("utf-8"))
+
+
 def _admin(request: Request):
-    if ADMIN:
-        if not secrets.compare_digest(request.headers.get("x-admin-token", ""), ADMIN):
-            raise HTTPException(403, "admin token required")
-    elif request.client and request.client.host not in ("127.0.0.1", "::1", "localhost", "testclient"):
-        raise HTTPException(403, "set VIZ_ADMIN_TOKEN to allow controls from other machines")
+    if not ADMIN:
+        raise HTTPException(403, "controls are off: VIZ_ADMIN_TOKEN is not set")
+    if not _token_ok(request):
+        raise HTTPException(403, "admin token required")
 
 
 @app.get("/")
@@ -362,8 +372,15 @@ def index():
 
 
 @app.get("/api/graph")
-def graph():
-    return {"nodes": NODES, "edges": EDGES, "day": DAY, "controls": True}
+def graph(request: Request):
+    return {"nodes": NODES, "edges": EDGES, "day": DAY, "controls": _token_ok(request)}
+
+
+@app.get("/api/auth")
+def auth(request: Request):
+    """The page asks this before it shows the control panel."""
+    _admin(request)
+    return {"ok": True}
 
 
 @app.get("/api/state")

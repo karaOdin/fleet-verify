@@ -136,7 +136,10 @@ heartbeats of the stream apps (`data/state/*.json`), Kafka end offsets and consu
 the Dagster outputs in `data/warehouse`, PostgreSQL. Click a node to see the code it runs
 (read from the source files, so it is always the code that actually runs).
 
-Buttons (header `X-Admin-Token: $VIZ_ADMIN_TOKEN`; without the variable only from the same machine):
+Buttons need the header `X-Admin-Token: $VIZ_ADMIN_TOKEN`. Without the variable every control request is refused,
+from any address: behind a reverse proxy every request comes from 127.0.0.1, so the client address never counts.
+Viewers do not see the panel at all; the presenter opens the page once as `/#admin=<token>` (the fragment never
+reaches the server or its logs, the page keeps the token in the browser), `/#lock` forgets it.
 
 | Button | What happens |
 |---|---|
