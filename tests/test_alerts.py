@@ -3,7 +3,7 @@
 Checked against what is known about that day:
   - 22606's paper says it went to school transport after 14:10: off_route from 14:12 for the rest of the day.
   - every bus of lines 04 and 05 waits ~600 m off the route near their shared terminal between trips;
-    that is a layover (standing still) and must not raise off_route.
+    that place is a layover (settings.json → layovers) and must raise nothing.
 """
 from collections import Counter
 
@@ -23,7 +23,7 @@ def found(day):
 
 def test_counts_per_type(found):
     opened = Counter(e["alert"] for e in found if e["state"] == "opened")
-    assert dict(opened) == {"off_route": 27, "silent": 8}
+    assert dict(opened) == {"off_route": 31, "silent": 3}
     assert opened["idle_outside_terminal"] == 0
 
 
@@ -35,11 +35,35 @@ def test_school_transport_22606(found):
     assert closed["duration_min"] > 240                 # gone for the rest of the afternoon
 
 
-def test_layovers_are_not_off_route(found):
-    lines = Counter(e["line"] for e in found if e["alert"] == "off_route" and e["state"] == "opened")
-    assert lines.get("05", 0) == 0
-    buses_04 = {e["bus"] for e in found if e["alert"] == "off_route" and e["line"] == "04"}
-    assert buses_04 <= {"22494", "H015"}                # 22494 drives (not parks) another road near the terminal
+def test_layover_place_raises_nothing(found, day):
+    """No alert opens inside the لاروكاد layover place of lines 04 and 05."""
+    import math
+    spot = day["cfg"]["layovers"]["04"][0]
+    def inside(e):
+        dy = (e["lat"] - spot["lat"]) * 110_540
+        dx = (e["lon"] - spot["lon"]) * 111_320 * math.cos(math.radians(spot["lat"]))
+        return math.hypot(dx, dy) <= spot["r"]
+    assert not [e for e in found if e["state"] == "opened" and e["line"] in ("04", "05") and inside(e)]
+
+
+def test_parked_far_off_route_at_midday(day):
+    """A bus parked 1 km off its route for 60 minutes at midday raises idle_outside_terminal (and off_route)."""
+    import numpy as np
+    from fleet import alerts
+    cfg, ln = day["cfg"], day["lines"]["10"]
+    k = len(ln.pts) // 2                                     # the middle of the route
+    d = ln.pts[k + 1] - ln.pts[k]
+    normal = np.array([-d[1], d[0]]) / np.hypot(*d)
+    parked = ln.pts[k] + 1000 * normal                         # 1 km to the side
+    st, out = alerts.init_state(), []
+    for s in range(11 * 3600, 11 * 3600 + 60, 10):            # first at the S terminal: the service day has begun
+        out += alerts.process(st, {"device_id": 7, "s": s, "kmh": 0.0}, ln, ln.S, cfg)
+    for s in range(12 * 3600, 13 * 3600 + 10, 10):            # then parked 1 km off the route, 12:00-13:00
+        out += alerts.process(st, {"device_id": 7, "s": s, "kmh": 0.0}, ln, parked, cfg)
+    opened = {e["alert"]: e for e in out if e["state"] == "opened"}
+    assert set(opened) == {"idle_outside_terminal", "off_route"}
+    assert opened["idle_outside_terminal"]["start"] == 12 * 3600
+    assert opened["idle_outside_terminal"]["at"] == 12 * 3600 + cfg["alerts"]["idle_min"] * 60
 
 
 def test_opened_once_closed_once(found):

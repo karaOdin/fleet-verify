@@ -69,11 +69,15 @@ Without Kafka (same logic): `python -m stream.live_trips --file data/inbox/posit
 
 | Alert | Rule |
 |---|---|
-| `off_route` | farther than 150 m from the line, with more than 10 minutes of that episode spent driving |
-| `idle_outside_terminal` | under 3 km/h for more than 30 minutes, away from the terminals |
+| `off_route` | farther than 150 m from the line for more than 10 minutes in a row, outside the line's known places |
+| `idle_outside_terminal` | under 3 km/h for more than 30 minutes in a row, outside the line's known places (on the route or off it) |
 | `silent` | no position for more than 10 minutes from a device that was in service (moved on its line in the 30 minutes before, last seen not parked) |
 
+Known places of a line: its terminal zones and its layover places (`config/settings.json` → `layovers`: centre and radius
+of where buses wait between rounds, seeded from 19 Nov).
+
 Nothing counts before the device first reaches a terminal of its line, nor at its overnight parking place.
+`python -m tools.bench_live --mode file|kafka` measures how many positions per second `live_trips` handles.
 `silent` runs on the stream's own clock (latest fix time), one clock per Kafka partition, so a replay behaves
 like real time. Alerts are for the dispatcher to look at (يحتاج نظر المراقب), never a sanction.
 `docs/alerts-2026-11-19.md` lists every alert of 19 Nov and explains the rules against that day.

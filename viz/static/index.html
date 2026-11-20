@@ -256,7 +256,7 @@ function render(){
   // offsets are committed every second, so a consumer that keeps up still shows about one second of messages
   const behind=lag!=null&&lag>Math.max(1500,3*(N.positions.rate||0));
   setNode("live_trips",lt.active?(behind?"lagging":"active"):(lag>0?"lagging":""),
-    lt.active?`${fmt(lt.processed)} نقطة · ${fmt(lt.trips)} ر · ⚠ ${fmt(lt.alerts_open||0)}`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
+    lt.active?`${fmt(Math.round(lt.rate))}/s · ${fmt(lt.trips)} ر · ⚠ ${fmt(lt.alerts_open||0)}`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
   setNode("trip_events",k&&N.trip_events.offset?"active":"",k?`${fmt(N.trip_events.offset)} حدث`:"—");
   const al=N.alerts;
   setNode("alerts",al.open?"lagging":(k&&al.offset?"active":""),k?`${fmt(al.offset)} حدث · ${fmt(al.open)} مفتوح`:"—");

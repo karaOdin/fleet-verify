@@ -43,15 +43,17 @@ def _acc_add(acc: dict, on: bool, along: float) -> None:
 
 def process(state: dict, point: dict, line: Line, xy: np.ndarray, cfg: dict, proj: tuple | None = None) -> list[dict]:
     """point: {"device_id", "s" (seconds since local midnight)}; xy: the point in metres.
-    proj: (distance to the route, distance along it) if the caller already projected the point."""
+    proj: (distance to the route, distance along it, distance to S, distance to E) if the caller already
+    measured the point (the stream does it once for the trip and alert rules)."""
     q = np.asarray(xy, dtype=float).reshape(1, 2)
     if proj is None:
         off, along = project(q, line.pts, line.cum, chunk=len(line.pts))   # one point: one pass over the whole route
         off, along = float(off[0]), float(along[0])
+        dS, dE = float(np.hypot(*(q[0] - line.S))), float(np.hypot(*(q[0] - line.E)))
     else:
-        off, along = proj
+        off, along, dS, dE = proj
     on = off <= cfg["on_route_m"]
-    z = _zone(off, along, float(np.hypot(*(q[0] - line.S))), float(np.hypot(*(q[0] - line.E))), line.length, cfg)
+    z = _zone(off, along, dS, dE, line.length, cfg)
     s = int(point["s"])
     ep, acc = state["ep"], state["acc"]
     events = []

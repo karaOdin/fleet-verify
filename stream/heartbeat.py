@@ -24,6 +24,7 @@ class Heartbeat:
         if not force and now - self.last < self.every:
             return
         self.last = now
+        flush()                         # trip events and alerts reach their files at the same pace
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"name": self.name, "pid": os.getpid(), "started": self.started,
                                    "updated": now, **metrics}, ensure_ascii=False, default=str))
@@ -37,13 +38,23 @@ EVENTS = STATE / "trip-events.jsonl"
 ALERTS = STATE / "alerts.jsonl"
 
 
+_PENDING: dict = {}                 # path -> lines waiting to be written
+
+
 def _append(path, rows: list[dict]) -> None:
-    if not rows:
+    """Buffered: lines are written by flush(), which the heartbeat calls at most once a second."""
+    if rows:
+        _PENDING.setdefault(path, []).extend(json.dumps(e, ensure_ascii=False) + "\n" for e in rows)
+
+
+def flush() -> None:
+    if not _PENDING:
         return
     STATE.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        for e in rows:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    for path, lines in list(_PENDING.items()):
+        with path.open("a", encoding="utf-8") as f:
+            f.writelines(lines)
+    _PENDING.clear()
 
 
 def append_events(events: list[dict]) -> None:

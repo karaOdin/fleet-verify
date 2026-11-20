@@ -3,12 +3,13 @@
 An alert is a recommendation for a human reviewer, never a sanction.
 
 Per device (same device state as the trip rules, one point at a time):
-  off_route              farther than `off_route_m` from the line, and driving there (faster than `idle_kmh`)
-                         for more than `off_route_min` minutes of that episode. Standing time does not count:
-                         on 19 Nov every bus of lines 04 and 05 waits ~600 m off the route near their shared
-                         terminal between trips (the batch calls it an excursion), which is a layover, not a
-                         detour. A long standstill is the idle rule's business.
-  idle_outside_terminal  slower than `idle_kmh` for more than `idle_min` minutes, outside the terminal zones
+  off_route              farther than `off_route_m` from the line for more than `off_route_min` minutes in a row,
+                         outside the known places of the line
+  idle_outside_terminal  slower than `idle_kmh` for more than `idle_min` minutes in a row, outside the known
+                         places of the line (on the route or off it)
+The known places of a line are its two terminal zones (`terminal_zone_m` around each terminal) and its layover
+places (`layovers` in settings.json: centre and radius, where buses wait between rounds; e.g. on 19 Nov every
+bus of lines 04 and 05 waits ~600 m off the route near their shared terminal).
 Both start counting only once the device has reached a terminal of its line today, so the drive from
 the depot and the wait there before the first trip never raise them. Points at the device's overnight
 parking place (`home`, its first position of the day) are ignored too.
@@ -37,6 +38,18 @@ from .lines import Line
 from .live import _zone
 
 TYPES = ("off_route", "idle_outside_terminal", "silent")
+_PLACES: dict = {}
+
+
+def _layovers(cfg: dict, code: str) -> list[tuple[float, float, float]]:
+    """The line's layover places in metres: [(x, y, r)], computed once per settings and line."""
+    key = (id(cfg), code)
+    if key not in _PLACES:
+        from .geo import Plane
+        plane = Plane(cfg["plane"]["lat0"], cfg["plane"]["lon0"])
+        _PLACES[key] = [(*plane.xy([p["lat"]], [p["lon"]])[0], float(p["r"]))
+                        for p in cfg.get("layovers", {}).get(code, [])]
+    return _PLACES[key]
 
 
 # ---------------- per device ----------------
@@ -57,18 +70,14 @@ def _event(kind: str, state: str, device_id: int, line: str, start_ts: float, st
     return e
 
 
-def _rule(state: dict, kind: str, cond: bool, min_s: float, p: dict, line: str, out: list, counts: bool = True) -> None:
-    """A condition that holds continuously; the alert opens once the time that `counts` within the
-    episode reaches `min_s`, and closes when the condition stops."""
+def _rule(state: dict, kind: str, cond: bool, min_s: float, p: dict, line: str, out: list) -> None:
+    """A condition that must hold continuously for `min_s` seconds; opens once, closes when it stops."""
     key = "off" if kind == "off_route" else "idle"
     since = state[key]
     if cond:
         if since is None:
-            state[key] = since = {"ts": p["ts"], "s": p["s"], "last": p["ts"], "n": 0.0}
-        if counts:
-            since["n"] += p["ts"] - since["last"]
-        since["last"] = p["ts"]
-        if kind not in state["open"] and since["n"] >= min_s:
+            state[key] = since = {"ts": p["ts"], "s": p["s"]}
+        if kind not in state["open"] and p["ts"] - since["ts"] >= min_s:
             state["open"][kind] = True
             out.append(_event(kind, "opened", p["device_id"], line, since["ts"], since["s"], p["ts"], p["s"],
                               p.get("lat"), p.get("lon")))
@@ -81,7 +90,7 @@ def _rule(state: dict, kind: str, cond: bool, min_s: float, p: dict, line: str, 
 
 def process(state: dict, point: dict, line: Line, xy, cfg: dict, proj: tuple | None = None) -> list[dict]:
     """point: {"device_id", "s", "ts" (defaults to s), "kmh", optional "lat"/"lon"}; xy: metres.
-    proj: (distance to the route, distance along it) if the caller already projected the point."""
+    proj: (distance to the route, distance along it, distance to S, distance to E) if already measured."""
     ac = cfg["alerts"]
     p = {**point, "ts": point.get("ts", point["s"])}
     q = np.asarray(xy, dtype=float).reshape(1, 2)
@@ -90,20 +99,23 @@ def process(state: dict, point: dict, line: Line, xy, cfg: dict, proj: tuple | N
     if proj is None:
         off, along = project(q, line.pts, line.cum, chunk=len(line.pts))
         off, along = float(off[0]), float(along[0])
+        dS, dE = float(np.hypot(*(q[0] - line.S))), float(np.hypot(*(q[0] - line.E)))
     else:
-        off, along = proj
-    dS, dE = float(np.hypot(*(q[0] - line.S))), float(np.hypot(*(q[0] - line.E)))
+        off, along, dS, dE = proj
     if _zone(off, along, dS, dE, line.length, cfg):
         state["started"] = True                        # reached a terminal: the service day has begun
     at_home = math.hypot(q[0, 0] - state["home"][0], q[0, 1] - state["home"][1]) <= ac["home_m"]
     active = state["started"] and not at_home
     in_terminal = min(dS, dE) <= ac["terminal_zone_m"] or _zone(off, along, dS, dE, line.length, cfg) > 0
+    x, y = float(q[0, 0]), float(q[0, 1])
+    at_layover = any(math.hypot(x - lx, y - ly) <= r for lx, ly, r in _layovers(cfg, line.code))
+    known_place = in_terminal or at_layover
     state["last_on_line"] = off <= cfg["on_route_m"]
-    state["last_in_terminal"] = bool(in_terminal)
+    state["last_in_terminal"] = bool(known_place)
     out: list[dict] = []
-    _rule(state, "off_route", active and off > ac["off_route_m"], ac["off_route_min"] * 60, p, line.code, out,
-          counts=p["kmh"] >= ac["idle_kmh"])
-    _rule(state, "idle_outside_terminal", active and p["kmh"] < ac["idle_kmh"] and not in_terminal,
+    _rule(state, "off_route", active and off > ac["off_route_m"] and not known_place, ac["off_route_min"] * 60,
+          p, line.code, out)
+    _rule(state, "idle_outside_terminal", active and p["kmh"] < ac["idle_kmh"] and not known_place,
           ac["idle_min"] * 60, p, line.code, out)
     return out
 
@@ -116,10 +128,11 @@ def clock_init() -> dict:
 
 def _in_service_when_quiet(d: dict, ac: dict) -> bool:
     """Was the device in service at its last position? It moved on its line shortly before, and its
-    last position was not a parked bus: standing still at a terminal or off the line (a tracker with the
+    last position was not a parked bus: at a known place (terminal, layover) or standing still off the line (a tracker with the
     engine off reports only every 15 min or so). A bus standing at a stop between terminals still counts."""
     moved = d["moved_ts"] is not None and d["last_ts"] - d["moved_ts"] <= ac["active_window_min"] * 60
-    parked = d["last_kmh"] < ac["idle_kmh"] and (d["last_in_terminal"] or not d["last_on_line"])
+    # at a known place the engine goes off on arrival, often before the speed reads zero
+    parked = d["last_in_terminal"] or (d["last_kmh"] < ac["idle_kmh"] and not d["last_on_line"])
     return moved and not parked
 
 

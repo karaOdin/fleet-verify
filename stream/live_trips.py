@@ -13,6 +13,8 @@ import os
 import time
 from datetime import datetime
 
+import numpy as np
+
 from fleet import alerts
 from fleet.geo import PointProjector
 from fleet.live import init_state, process
@@ -95,7 +97,8 @@ def step(value: dict, st: dict | None, partition: int = 0) -> tuple[list[dict], 
     s = t.hour * 3600 + t.minute * 60 + t.second
     pt = {"device_id": int(value["device_id"]), "s": s, "ts": ts, "kmh": float(value["speed_kn"] or 0) * 1.852,
           "lat": value["lat"], "lon": value["lon"]}
-    proj = _projector(line)(*xy)                    # once per point, shared by the trip and alert rules
+    q = np.asarray(xy, dtype=float)                 # measured once per point, shared by the trip and alert rules
+    proj = (*_projector(line)(*xy), float(np.hypot(*(q - line.S))), float(np.hypot(*(q - line.E))))
     out = []
     found = alerts.process(st["alerts"], pt, line, xy, CFG, proj)
     clock = CLOCKS.setdefault(partition, alerts.clock_init())
@@ -162,6 +165,8 @@ def run_kafka():
         app, _ = build_app(group, reset)
         try:
             app.run()                    # returns on SIGTERM / Ctrl-C: stop for good
+            if HB is not None:
+                HB.stop(mode="kafka", **COUNT)   # writes the last buffered events too
             return
         except Exception as e:           # a broker hiccup (e.g. "Unknown member" after a session timeout):
             print(f"live_trips: {type(e).__name__}: {e}; restarting in 3 s from the last committed offset",
