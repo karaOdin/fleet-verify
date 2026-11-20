@@ -16,6 +16,7 @@ from sources import cloudroutes
 BROKER = os.environ.get("KAFKA_BROKER", "localhost:9092")
 POSITIONS = os.environ.get("TOPIC_POSITIONS", "fleet.positions")
 TRIP_EVENTS = os.environ.get("TOPIC_TRIP_EVENTS", "fleet.trip-events")
+ALERTS = os.environ.get("TOPIC_ALERTS", "fleet.alerts")
 DATA = Path(os.environ.get("FLEET_DATA", ROOT / "data"))
 CFG = settings()
 TZ = ZoneInfo(CFG["timezone"])
@@ -52,6 +53,15 @@ def message(device_id: int, fix_time_utc: str, lat: float, lon: float, speed_kn:
     """Kafka key and value for one position (the same format from every producer)."""
     return str(device_id), json.dumps({"device_id": int(device_id), "fix_time_utc": fix_time_utc,
                                        "lat": float(lat), "lon": float(lon), "speed_kn": float(speed_kn or 0)}).encode()
+
+
+def event_ms(fix_time_utc: str) -> int:
+    """Kafka message timestamp = the GPS fix time (event time), so consumers that read several
+    partitions process positions in data-time order, even when a replay dumps a day at once."""
+    t = datetime.fromisoformat(fix_time_utc.replace("Z", "+00:00"))
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=ZoneInfo("UTC"))
+    return int(t.timestamp() * 1000)
 
 
 def _local_minute():

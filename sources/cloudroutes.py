@@ -110,9 +110,10 @@ def registry() -> list[dict]:
 def road_papers(day: str) -> list[dict]:
     """All road papers of one work date, each with its trips:
     {id, bus, line, shift, status, trips: [{trip_number, direction, departure_time, arrival_time, total_tickets}]}"""
-    if data_api_configured():
-        return [_normalise_paper(p) for p in _papers_pages({"date": day})]
     f = INBOX / f"road_papers_{day}.json"
+    prefer_file = os.environ.get("FLEET_PAPERS_PREFER", "api") == "inbox" and f.exists()
+    if data_api_configured() and not prefer_file:     # workshop: FLEET_PAPERS_PREFER=inbox, no live API on stage
+        return [_normalise_paper(p) for p in _papers_pages({"date": day})]
     if not f.exists():
         raise FileNotFoundError(f"No road papers for {day}: set CLOUDROUTES_URL/TOKEN or put {f.name} in {INBOX}")
     payload = json.loads(f.read_text(encoding="utf-8"))

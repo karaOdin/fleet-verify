@@ -7,6 +7,25 @@ import time
 from stream.common import BROKER
 
 _cache = {"t": 0.0, "key": None, "val": None}
+_clients: dict = {}                 # one admin client and one consumer, reused (new connections every second are costly)
+
+
+def _get_clients():
+    from confluent_kafka import Consumer
+    from confluent_kafka.admin import AdminClient
+    if not _clients:
+        _clients["admin"] = AdminClient({"bootstrap.servers": BROKER, "socket.timeout.ms": 1500})
+        _clients["consumer"] = Consumer({"bootstrap.servers": BROKER, "group.id": "viz-metrics", "enable.auto.commit": False})
+    return _clients["admin"], _clients["consumer"]
+
+
+def _drop_clients():
+    c = _clients.pop("consumer", None)
+    _clients.clear()
+    try:
+        c and c.close()
+    except Exception:
+        pass
 
 
 def read(topics: list[str], groups: list[str]) -> dict:
@@ -20,24 +39,18 @@ def read(topics: list[str], groups: list[str]) -> dict:
 
 def _read(topics: list[str], groups: list[str]) -> dict:
     try:
-        from confluent_kafka import Consumer, TopicPartition
-        from confluent_kafka.admin import AdminClient
-        from confluent_kafka import ConsumerGroupTopicPartitions
+        from confluent_kafka import ConsumerGroupTopicPartitions, TopicPartition
     except Exception as e:
         return {"ok": False, "error": f"confluent-kafka missing: {e}", "topics": {}, "lag": {}}
     try:
-        admin = AdminClient({"bootstrap.servers": BROKER, "socket.timeout.ms": 1500})
+        admin, c = _get_clients()
         md = admin.list_topics(timeout=1.5)
-        c = Consumer({"bootstrap.servers": BROKER, "group.id": "viz-metrics", "enable.auto.commit": False})
         ends: dict[str, dict[int, int]] = {}
-        try:
-            for t in topics:
-                if t not in md.topics:
-                    ends[t] = {}
-                    continue
-                ends[t] = {p: c.get_watermark_offsets(TopicPartition(t, p), timeout=1.5)[1] for p in md.topics[t].partitions}
-        finally:
-            c.close()
+        for t in topics:
+            if t not in md.topics:
+                ends[t] = {}
+                continue
+            ends[t] = {p: c.get_watermark_offsets(TopicPartition(t, p), timeout=1.5)[1] for p in md.topics[t].partitions}
         lag = {}
         for g in groups:
             parts = [TopicPartition(t, p) for t in topics for p in ends.get(t, {})]
@@ -53,4 +66,5 @@ def _read(topics: list[str], groups: list[str]) -> dict:
                 pass
         return {"ok": True, "topics": {t: sum(v.values()) for t, v in ends.items()}, "lag": lag}
     except Exception as e:
+        _drop_clients()                 # reconnect next time (broker restarted, topics recreated, ...)
         return {"ok": False, "error": str(e)[:160], "topics": {}, "lag": {}}

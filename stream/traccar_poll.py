@@ -13,7 +13,7 @@ from confluent_kafka import Producer
 
 from sources import traccar
 from stream.heartbeat import Heartbeat
-from stream.common import BROKER, POSITIONS, message
+from stream.common import BROKER, POSITIONS, event_ms, message
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
                     continue
                 last[r["device_id"]] = r["fix_time_utc"]
                 k, v = message(r["device_id"], r["fix_time_utc"], r["lat"], r["lon"], r["speed_kn"])
-                p.produce(POSITIONS, key=k, value=v)
+                p.produce(POSITIONS, key=k, value=v, timestamp=event_ms(r["fix_time_utc"]))
                 sent += 1
             p.flush(5)
             total += sent

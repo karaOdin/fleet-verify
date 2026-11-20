@@ -23,6 +23,7 @@ CloudRoutes ─▶ road_papers, lines, registry        ▼                      
 | `fleet/match.py` | scipy | Declared trip ↔ GPS trip, one to one (Hungarian method) |
 | `fleet/km.py` | Polars (`join_asof`) | Commercial / non-commercial km |
 | `fleet/live.py` | plain Python | The same trip rules, one point at a time, for the stream |
+| `fleet/alerts.py` | plain Python | Live alerts (off route, long stop outside a terminal, silent device), one point at a time |
 | `stream/` | Kafka, Quix Streams | Live trips, raw positions to the lake |
 | `pipeline/` | Dagster | Daily partitions, asset checks, schedule, PostgreSQL export |
 | `dashboard/` | Streamlit | Daily report and live events |
@@ -61,6 +62,22 @@ python -m stream.replay data/inbox/positions_2026-11-19.csv.gz --speed 120   # .
 
 Without Kafka (same logic): `python -m stream.live_trips --file data/inbox/positions_2026-11-19.csv.gz`
 
+## Live alerts
+
+`stream.live_trips` also runs `fleet/alerts.py` on every position, with the same device state, and publishes
+`opened` / `closed` events to `fleet.alerts` (and `data/state/alerts.jsonl`). Thresholds: `config/settings.json` → `alerts`.
+
+| Alert | Rule |
+|---|---|
+| `off_route` | farther than 150 m from the line, with more than 10 minutes of that episode spent driving |
+| `idle_outside_terminal` | under 3 km/h for more than 30 minutes, away from the terminals |
+| `silent` | no position for more than 10 minutes from a device that was in service (moved on its line in the 30 minutes before, last seen not parked) |
+
+Nothing counts before the device first reaches a terminal of its line, nor at its overnight parking place.
+`silent` runs on the stream's own clock (latest fix time), one clock per Kafka partition, so a replay behaves
+like real time. Alerts are for the dispatcher to look at (يحتاج نظر المراقب), never a sanction.
+`docs/alerts-2026-11-19.md` lists every alert of 19 Nov and explains the rules against that day.
+
 ## Tests
 
 ```bash
@@ -71,6 +88,10 @@ pytest -q
   the ER cases H030, 22618, H031, H021) and bus 22494 trip by trip as checked by hand.
 - `test_live_matches_batch.py`: replays the day point by point through the stream logic and requires
   exactly the trips the batch finds.
+- `test_alerts.py`: alert counts of 19 Nov, 22606's school transport after 14:10, layovers are not off route.
+- `test_kafka_e2e.py` (needs a broker): two hours of 19 Nov through Kafka; trips equal the batch's, alerts equal the pure rules.
+- `test_viz_browser.py` (needs the page running): the workshop run clicked in headless Chromium, screenshots in `docs/screens/`.
+  `pip install playwright && python -m playwright install chromium`.
 
 ## Inputs CloudRoutes must provide
 

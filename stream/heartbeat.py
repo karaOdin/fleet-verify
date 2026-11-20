@@ -34,13 +34,23 @@ class Heartbeat:
 
 
 EVENTS = STATE / "trip-events.jsonl"
+ALERTS = STATE / "alerts.jsonl"
+
+
+def _append(path, rows: list[dict]) -> None:
+    if not rows:
+        return
+    STATE.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for e in rows:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
 
 
 def append_events(events: list[dict]) -> None:
     """Trip events also go to a local file, so the viewer works with or without Kafka."""
-    if not events:
-        return
-    STATE.mkdir(parents=True, exist_ok=True)
-    with EVENTS.open("a", encoding="utf-8") as f:
-        for e in events:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    _append(EVENTS, events)
+
+
+def append_alerts(alerts: list[dict]) -> None:
+    """Alerts too (opened and closed events)."""
+    _append(ALERTS, alerts)

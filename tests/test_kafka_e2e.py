@@ -31,7 +31,8 @@ def _broker_up() -> bool:
 pytestmark = pytest.mark.skipif(not _broker_up(), reason=f"no Kafka broker at {BROKER}")
 
 
-def _consume_all(topic: str, idle_s: float = 5.0) -> list[dict]:
+def _consume_all(topic: str, idle_s: float = 5.0, partitions: dict | None = None) -> list[dict]:
+    """Every message of a topic. With `partitions`, also records key -> partition."""
     from confluent_kafka import Consumer
     c = Consumer({"bootstrap.servers": BROKER, "group.id": f"e2e-read-{uuid.uuid4().hex}",
                   "auto.offset.reset": "earliest", "enable.auto.commit": False})
@@ -43,6 +44,8 @@ def _consume_all(topic: str, idle_s: float = 5.0) -> list[dict]:
             if m is None or m.error():
                 continue
             out.append(json.loads(m.value()))
+            if partitions is not None:
+                partitions[int(m.key())] = m.partition()
             last = time.monotonic()
     finally:
         c.close()
@@ -57,7 +60,7 @@ def test_kafka_live_equals_batch_window(day):
     from fleet.settings import plane
     from fleet.trips import detect, zone_points
     import stream.live_trips as lt
-    from stream.common import DATA, before_local_time, from_local_time, message
+    from stream.common import DATA, before_local_time, event_ms, from_local_time, message
     from stream.heartbeat import Heartbeat
 
     cfg = day["cfg"]
@@ -78,7 +81,7 @@ def test_kafka_live_equals_batch_window(day):
         k, v = message(r["device_id"], r["fix_time_utc"], r["lat"], r["lon"], r["speed_kn"])
         while True:
             try:
-                p.produce(src, key=k, value=v)
+                p.produce(src, key=k, value=v, timestamp=event_ms(r["fix_time_utc"]))
                 break
             except BufferError:
                 p.poll(0.2)
@@ -88,14 +91,18 @@ def test_kafka_live_equals_batch_window(day):
     lt.LINES = day["lines"]
     lt.ASSIGN = {int(r["device_id"]): {"bus": str(r["device_id"]), "line": r["line"]} for r in dl.iter_rows(named=True)}
     lt.HB = Heartbeat(f"e2e-{tag}")
-    lt.append_events = lambda events: None           # keep the demo's event file untouched
+    lt.append_events = lambda events: None           # keep the demo's event files untouched
+    lt.append_alerts = lambda alerts: None
     lt.COUNT.update(processed=0, trips=0, excursions=0)
     group = f"e2e-{tag}"
-    app, _ = lt.build_app(group, "earliest", src, dst, verbose=False)
+    app, _ = lt.build_app(group, "earliest", src, dst, verbose=False, alerts_topic=f"e2e.alerts.{tag}")
     admin = AdminClient({"bootstrap.servers": BROKER})
     try:
         app.run(timeout=15)                          # stops once no new message arrives for 15 s
         events = _consume_all(dst)
+        part = {}
+        _consume_all(src, partitions=part)         # which partition each device's positions went to
+        found = _consume_all(f"e2e.alerts.{tag}")
     finally:
         lt.HB.path.unlink(missing_ok=True)
         mine = [t for t in admin.list_topics(timeout=5).topics if tag in t]   # ours plus Quix's changelog
@@ -108,3 +115,10 @@ def test_kafka_live_equals_batch_window(day):
     ref = batch.select("device_id", "kind", "frm", "to", "dep", "arr").sort(["device_id", "dep", "arr"])
     assert live.height == ref.height
     assert live.equals(ref.cast(live.schema))
+
+    # alerts through Kafka equal the pure rules on the same points (same keys, same times)
+    from alerts_replay import replay_alerts
+    key = lambda e: (e["device_id"], e["alert"], e["state"], e["start"], e["at"])
+    ref_alerts = sorted(map(key, replay_alerts(day, pts, part)))
+    assert ref_alerts, "the window should raise at least one alert"
+    assert sorted(map(key, found)) == ref_alerts

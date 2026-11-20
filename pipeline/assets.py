@@ -50,7 +50,8 @@ def fleet_registry() -> pl.DataFrame:
 
 @asset(group_name="reference", description="Traccar devices (id, name, status).")
 def traccar_devices() -> pl.DataFrame:
-    rows = traccar.devices() if traccar.configured() else json.loads((DATA / "inbox" / "devices.json").read_text())
+    use_api = traccar.configured() and os.environ.get("FLEET_DEVICES_PREFER", "api") != "inbox"
+    rows = traccar.devices() if use_api else json.loads((DATA / "inbox" / "devices.json").read_text())
     return pl.DataFrame(rows).select("id", "name", "status")
 
 

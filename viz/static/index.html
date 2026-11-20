@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>خط البيانات الحيّ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- fonts load without blocking: with no internet the page draws at once in system fonts -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
 <style>
 /* Layout: control-room page — header, the pipeline drawing (two lanes), then three panels: live trips, daily results, controls */
 :root{
@@ -57,7 +58,14 @@ svg#g{display:block;width:100%;min-width:980px;height:auto;direction:ltr}
 .edge.hot{stroke:color-mix(in srgb,var(--on) 55%,var(--line))}
 .particle{fill:var(--on)}
 .particle.batch{fill:var(--k-asset)}
-.panels{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:16px}
+.panels{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px}
+.panels .ctl{grid-column:1/-1}
+.ctl-rows{display:flex;flex-wrap:wrap;gap:10px 22px}
+.alerts li{grid-template-columns:auto 1fr auto}
+.alerts li.open{background:color-mix(in srgb,var(--warn) 14%,var(--bg))}
+.alerts .kind{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alerts li.open .kind{color:var(--warn);font-weight:600}
+.banner-note{font-size:.82rem;color:var(--muted);margin:0}
 @media (max-width:980px){.panels{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0;display:grid;gap:10px;align-content:start}
 .panel h2{margin:0;font-size:1.05rem;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -110,14 +118,14 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
   </header>
 
   <section class="stage" aria-label="مخطط خط البيانات">
-    <svg id="g" viewBox="0 0 1260 580" role="img" aria-label="العقد من المصدر إلى التقارير">
-      <rect x="6" y="48" width="1248" height="232" rx="14" fill="var(--lane-live)"></rect>
-      <rect x="6" y="300" width="1248" height="270" rx="14" fill="var(--lane-batch)"></rect>
+    <svg id="g" viewBox="0 0 1260 620" role="img" aria-label="العقد من المصدر إلى التقارير">
+      <rect x="6" y="48" width="1248" height="262" rx="14" fill="var(--lane-live)"></rect>
+      <rect x="6" y="330" width="1248" height="280" rx="14" fill="var(--lane-batch)"></rect>
       <text class="lane-label" x="1236" y="40" text-anchor="end">مباشر — كل نقطة GPS لحظة وصولها</text>
       <text class="lane-tech" x="30" y="40">streaming · Kafka + Quix Streams</text>
       <g id="edges"></g><g id="particles"></g><g id="nodes"></g>
-      <text class="lane-tech" x="30" y="560">batch · Dagster · كل يوم 02:30 · قسم لكل يوم</text>
-      <text class="lane-label" x="1236" y="560" text-anchor="end">يومي — التحقق، ER، الكيلومترات</text>
+      <text class="lane-tech" x="30" y="600">batch · Dagster · كل يوم 02:30 · قسم لكل يوم</text>
+      <text class="lane-label" x="1236" y="600" text-anchor="end">يومي — التحقق، ER، الكيلومترات</text>
     </svg>
   </section>
 
@@ -127,6 +135,11 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
       <ul class="feed" id="feed"><li class="empty">لا أحداث بعد. شغّل الإعادة من لوحة التحكم.</li></ul>
     </div>
     <div class="panel">
+      <h2>يحتاج نظر المراقب <span id="alert-count">0 مفتوح</span></h2>
+      <ul class="feed alerts" id="alerts"><li class="empty">لا تنبيهات بعد.</li></ul>
+      <p class="banner-note">تنبيه لحظي لمراقب بشري ينظر فيه، وليس مخالفة: قد يكون للسائق سبب (أشغال، نقل مدرسي، عطل).</p>
+    </div>
+    <div class="panel">
       <h2>نتيجة اليوم <span id="res-day"></span></h2>
       <div class="kpis" id="kpis"></div>
       <ul class="checks" id="checks"></ul>
@@ -134,9 +147,10 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
     </div>
     <div class="panel ctl">
       <h2>التحكم في العرض <span id="group"></span></h2>
+      <div class="ctl-rows">
       <div class="row">
         <label for="speed">السرعة</label>
-        <select id="speed"><option value="60">×60</option><option value="120" selected>×120</option><option value="300">×300</option><option value="600">×600</option></select>
+        <select id="speed"><option value="60">×60</option><option value="120" selected>×120</option><option value="300">×300</option><option value="600">×600 (التأخر يكبر وحده)</option></select>
       </div>
       <div class="row">
         <button class="primary" data-a="replay" type="button">▶ إعادة اليوم في Kafka</button>
@@ -158,6 +172,7 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
       <div class="row">
         <label for="token">مفتاح التحكم</label>
         <input id="token" type="password" autocomplete="off" placeholder="VIZ_ADMIN_TOKEN" size="16">
+      </div>
       </div>
       <p class="msg" id="msg" role="status"></p>
     </div>
@@ -215,7 +230,7 @@ async function init(){
 
 function connect(){
   const es=new EventSource("api/stream");
-  es.onmessage=ev=>{S=JSON.parse(ev.data);render();addEvents(S.events||[])};
+  es.onmessage=ev=>{S=JSON.parse(ev.data);render();addEvents(S.events||[]);addAlerts(S.alerts||[])};
   es.onerror=()=>{$("k-txt").textContent="الخادم غير متصل";$("k-dot").className="dot bad"};
 }
 
@@ -241,8 +256,11 @@ function render(){
   // offsets are committed every second, so a consumer that keeps up still shows about one second of messages
   const behind=lag!=null&&lag>Math.max(1500,3*(N.positions.rate||0));
   setNode("live_trips",lt.active?(behind?"lagging":"active"):(lag>0?"lagging":""),
-    lt.active?`${fmt(lt.processed)} نقطة · ${fmt(lt.trips)} ر`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
+    lt.active?`${fmt(lt.processed)} نقطة · ${fmt(lt.trips)} ر · ⚠ ${fmt(lt.alerts_open||0)}`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
   setNode("trip_events",k&&N.trip_events.offset?"active":"",k?`${fmt(N.trip_events.offset)} حدث`:"—");
+  const al=N.alerts;
+  setNode("alerts",al.open?"lagging":(k&&al.offset?"active":""),k?`${fmt(al.offset)} حدث · ${fmt(al.open)} مفتوح`:"—");
+  $("alert-count").textContent=`${fmt(al.open||0)} مفتوح`;
   setNode("live_board",lt.trips?"active":"",`${fmt(lt.trips||0)} نصف رحلة`);
   setNode("lake_sink",N.lake_sink.active?(N.lake_sink.lag>20000?"lagging":"active"):"",N.lake_sink.active?`${fmt(N.lake_sink.written)} مكتوبة`+(N.lake_sink.lag!=null?` · تأخر ${fmt(N.lake_sink.lag)}`:""):"متوقف");
   setNode("lake",N.lake.rows?"active":"",N.lake.rows?`${fmt(N.lake.rows)} موقع · ${N.lake.files} ملف`:"فارغ لهذا اليوم");
@@ -281,8 +299,20 @@ function addEvents(evs){
   $("feed-count").textContent=`${fmt(S&&S.nodes.live_trips.trips||tripsSeen)} نصف رحلة`;
 }
 
+// ---- alerts: one row per alert, updated when it closes
+const ALERTS=new Map();
+function addAlerts(list){
+  if(!list.length)return;
+  list.forEach(a=>{const old=ALERTS.get(a.id)||{};ALERTS.set(a.id,{...old,...a,since:old.since||a.since});spawn("live_trips>alerts",2);spawn("alerts>live_board",2)});
+  const ul=$("alerts"), rows=[...ALERTS.values()].sort((x,y)=>(x.state==="opened")-(y.state==="opened")||(x.since<y.since?-1:1)).reverse().slice(0,40);
+  ul.innerHTML=rows.map(a=>{const open=a.state==="opened";
+    return `<li class="${open?"open":""}"><span class="bus">${a.bus}</span><span class="kind">${a.label}</span><span class="time">${a.since}`+(open?" · مفتوح":` · ${Math.round(a.minutes)}′`)+`</span></li>`}).join("");
+}
+
 // ---- moving particles: their density follows the real message rate
-function spawn(key,n){const p=paths[key];if(!p)return;for(let i=0;i<n;i++)parts.push({p,t:-i*0.08,c:el("circle",{r:3.2,class:"particle"+(p.lane==="batch"?" batch":"")},$("particles"))})}
+// at most MAX_PARTS on screen: a catch-up delivers hundreds of events at once and must not freeze a phone
+const MAX_PARTS=120, STILL=matchMedia("(prefers-reduced-motion: reduce)");   // no moving dots for viewers who ask for less motion
+function spawn(key,n){const p=paths[key];if(!p||STILL.matches)return;for(let i=0;i<n&&parts.length<MAX_PARTS;i++)parts.push({p,t:-i*0.08,c:el("circle",{r:3.2,class:"particle"+(p.lane==="batch"?" batch":"")},$("particles"))})}
 let last=performance.now();
 function tick(now){
   const dt=Math.min(0.1,(now-last)/1000); last=now;
@@ -290,6 +320,7 @@ function tick(now){
     const N=S.nodes;
     const rate={ "replay>positions":N.replay.active?N.replay.rate:0, "positions>live_trips":N.live_trips.active?N.live_trips.rate:0,
       "positions>lake_sink":N.lake_sink.active?Math.max(N.lake_sink.rate,N.positions.rate):0, "lake_sink>lake":N.lake_sink.rate };
+    rate["live_trips>trip_events"]=0; rate["live_trips>alerts"]=0;
     for(const key in paths){
       const p=paths[key]; let r=rate[key]||0;
       if(p.lane==="batch"){const st=(N[p.to]||{}).step; r=st==="running"?40:0}
@@ -302,7 +333,7 @@ function tick(now){
   parts=parts.filter(q=>{
     q.t+=dt*0.9; if(q.t<0)return true;
     if(q.t>=1){q.c.remove();return false}
-    const L=q.p.el.getTotalLength(), pt=q.p.el.getPointAtLength(q.t*L);
+    const L=q.p.len||(q.p.len=q.p.el.getTotalLength()), pt=q.p.el.getPointAtLength(q.t*L);
     q.c.setAttribute("cx",pt.x);q.c.setAttribute("cy",pt.y);return true;
   });
   requestAnimationFrame(tick);
@@ -317,7 +348,8 @@ document.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",asyn
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.detail||r.status);
     $("msg").textContent=b.textContent.trim()+" ✓";
-    if(a==="reset"){$("feed").innerHTML='<li class="empty">بداية نظيفة. شغّل live_trips ثم الإعادة.</li>';tripsSeen=0}
+    if(a==="reset"){$("feed").innerHTML='<li class="empty">بداية نظيفة. شغّل live_trips ثم الإعادة.</li>';tripsSeen=0;
+      ALERTS.clear();$("alerts").innerHTML='<li class="empty">لا تنبيهات بعد.</li>'}
   }catch(e){$("msg").className="msg err";$("msg").textContent="مرفوض: "+e.message}
 }));
 

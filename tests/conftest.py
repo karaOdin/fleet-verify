@@ -8,6 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 csv.field_size_limit(10**9)
 INBOX = ROOT / "data" / "inbox"
 DAY = "2026-11-19"

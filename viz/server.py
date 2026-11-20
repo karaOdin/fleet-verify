@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from stream.common import DATA, POSITIONS, TRIP_EVENTS  # noqa: E402
+from stream.common import ALERTS, DATA, POSITIONS, TRIP_EVENTS  # noqa: E402
 from viz import kafka_metrics  # noqa: E402
 from viz.graph import NODES, EDGES  # noqa: E402
 
@@ -249,7 +249,7 @@ RATES = Rates()
 
 def snapshot() -> dict:
     day = BATCH.day or DAY
-    k = kafka_metrics.read([POSITIONS, TRIP_EVENTS], [PROCS.group, "lake-sink"])
+    k = kafka_metrics.read([POSITIONS, TRIP_EVENTS, ALERTS], [PROCS.group, "lake-sink"])
     rp, lt, ls = _hb("replay"), _hb("live_trips"), _hb("lake_sink")
     tp, pp = _hb("traccar_poll"), _hb("papers_poll")
     pos_end = k["topics"].get(POSITIONS) if k["ok"] else None
@@ -264,6 +264,10 @@ def snapshot() -> dict:
                        "lag": k["lag"].get(PROCS.group) if k["ok"] else None,
                        "rate": RATES.rate("live", (lt or {}).get("processed"))}
     n["trip_events"] = {"kafka": k["ok"], "offset": ev_end, "trips": (lt or {}).get("trips")}
+    open_alerts = [_public_alert(a) for a in (lt or {}).get("open_alerts", [])] if _alive(lt, 30) else []
+    n["live_trips"]["alerts_open"] = len(open_alerts)
+    n["alerts"] = {"kafka": k["ok"], "offset": k["topics"].get(ALERTS) if k["ok"] else None,
+                   "total": (lt or {}).get("alerts"), "open": len(open_alerts)}
     n["live_board"] = {"trips": (lt or {}).get("trips")}
     n["lake_sink"] = {"active": _alive(ls), "written": (ls or {}).get("written"),
                       "lag": k["lag"].get("lake-sink") if k["ok"] else None,
@@ -282,34 +286,64 @@ def snapshot() -> dict:
         "batch": {"running": BATCH.running, "day": BATCH.day, "ok": BATCH.ok, "steps": BATCH.steps,
                   "checks": BATCH.checks, "started": BATCH.started, "finished": BATCH.finished, "log": list(BATCH.log)[-5:]},
         "results": _results(day),
+        "open_alerts": open_alerts,
         "anonymized": ANON,
     }
 
 
-def _events_since(pos: int) -> tuple[list[dict], int]:
-    f = STATE / "trip-events.jsonl"
-    if not f.exists():
-        return [], 0
-    size = f.stat().st_size
-    if pos > size:          # file was reset
-        pos = 0
-    if pos == size:
-        return [], pos
-    with f.open("rb") as fh:
-        fh.seek(pos)
-        chunk = fh.read(size - pos)
-    lines = chunk.split(b"\n")
-    tail = lines.pop()               # an incomplete last line waits for the next read
-    out = []
-    for raw in lines:
-        try:
-            e = json.loads(raw)
-        except Exception:
-            continue
-        out.append({"bus": show_bus(e.get("bus")), "event": e["event"], "line": e.get("line"),
-                    "dep": e.get("dep_time"), "arr": e.get("arr_time"), "from": e.get("from_name"),
-                    "to": e.get("to_name"), "minutes": e.get("minutes")})
-    return out[-60:], size - len(tail)
+ALERT_LABEL = {"off_route": "خارج المسار", "idle_outside_terminal": "متوقف طويلًا خارج المحطة", "silent": "الجهاز صامت"}
+
+
+def _public_trip(e: dict) -> dict:
+    """What a public viewer sees of a trip event: no device id, the bus anonymised."""
+    return {"bus": show_bus(e.get("bus")), "event": e["event"], "line": e.get("line"),
+            "dep": e.get("dep_time"), "arr": e.get("arr_time"), "from": e.get("from_name"),
+            "to": e.get("to_name"), "minutes": e.get("minutes")}
+
+
+def _public_alert(e: dict) -> dict:
+    return {"id": _alert_key(e.get("alert_id", "")), "bus": show_bus(e.get("bus")), "alert": e.get("alert"),
+            "label": ALERT_LABEL.get(e.get("alert"), e.get("alert")), "state": e.get("state", "opened"),
+            "line": e.get("line"), "since": e.get("start_time"), "at": e.get("at_time"),
+            "minutes": e.get("duration_min")}
+
+
+def _alert_key(alert_id: str) -> str:
+    """alert_id contains the device id; the page gets a short opaque key instead."""
+    import hashlib
+    return hashlib.sha256(alert_id.encode()).hexdigest()[:10]
+
+
+class Tail:
+    """Reads the lines appended to a JSONL file since the last call (and notices a reset)."""
+    def __init__(self, path: Path, public):
+        self.path, self.public = path, public
+
+    def since(self, pos: int, keep: int = 60) -> tuple[list[dict], int]:
+        f = self.path
+        if not f.exists():
+            return [], 0
+        size = f.stat().st_size
+        if pos > size:          # file was reset
+            pos = 0
+        if pos == size:
+            return [], pos
+        with f.open("rb") as fh:
+            fh.seek(pos)
+            chunk = fh.read(size - pos)
+        lines = chunk.split(b"\n")
+        tail = lines.pop()               # an incomplete last line waits for the next read
+        out = []
+        for raw in lines:
+            try:
+                out.append(self.public(json.loads(raw)))
+            except Exception:
+                continue
+        return out[-keep:], size - len(tail)
+
+
+TRIPS_TAIL = Tail(STATE / "trip-events.jsonl", _public_trip)
+ALERTS_TAIL = Tail(STATE / "alerts.jsonl", _public_alert)
 
 
 # ---------------- HTTP ----------------
@@ -340,17 +374,19 @@ def state():
 @app.get("/api/stream")
 async def stream(request: Request):
     async def gen():
-        _, pos = _events_since(0)
-        pos = max(0, pos)
+        _, pos = TRIPS_TAIL.since(0)
+        _, apos = ALERTS_TAIL.since(0)
         first = True
         while not await request.is_disconnected():
             snap = await asyncio.to_thread(snapshot)
-            events, pos = await asyncio.to_thread(_events_since, pos)
-            if first:
-                f = STATE / "trip-events.jsonl"
-                events = _events_since(0)[0][-15:] if f.exists() else []
+            events, pos = await asyncio.to_thread(TRIPS_TAIL.since, pos)
+            found, apos = await asyncio.to_thread(ALERTS_TAIL.since, apos)
+            if first:                    # a new viewer gets the recent history
+                events = TRIPS_TAIL.since(0)[0][-15:]
+                found = ALERTS_TAIL.since(0, keep=400)[0]
                 first = False
             snap["events"] = events
+            snap["alerts"] = found
             yield f"data: {json.dumps(snap, ensure_ascii=False, default=str)}\n\n"
             await asyncio.sleep(1)
     return StreamingResponse(gen(), media_type="text/event-stream",
@@ -401,7 +437,7 @@ def control(action: str, request: Request, speed: float = 120, day: str | None =
         for name in ["replay", "live_trips", "live_fallback"]:
             PROCS.stop(name)
         PROCS.group = f"live-trips-{int(time.time())}"
-        for f in ["trip-events.jsonl", "replay.json", "live_trips.json"]:
+        for f in ["trip-events.jsonl", "alerts.jsonl", "replay.json", "live_trips.json"]:
             (STATE / f).unlink(missing_ok=True)
     elif action == "batch":
         BATCH.run(day or DAY)

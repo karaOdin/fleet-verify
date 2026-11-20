@@ -11,7 +11,7 @@ from datetime import datetime
 import polars as pl
 from confluent_kafka import Producer
 
-from stream.common import BROKER, POSITIONS, before_local_time, from_local_time, message
+from stream.common import BROKER, POSITIONS, before_local_time, event_ms, from_local_time, message
 from stream.heartbeat import Heartbeat
 
 
@@ -42,7 +42,7 @@ def main():
         k, v = message(r["device_id"], r["fix_time_utc"], r["lat"], r["lon"], r["speed_kn"])
         while True:
             try:
-                p.produce(args.topic, key=k, value=v)
+                p.produce(args.topic, key=k, value=v, timestamp=event_ms(r["fix_time_utc"]))
                 break
             except BufferError:          # local queue full (speed 0): let deliveries drain, then retry
                 p.poll(0.2)

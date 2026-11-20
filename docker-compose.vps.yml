@@ -31,6 +31,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data   # on the volume (the image default is /tmp/kafka-logs, lost with the container)
       KAFKA_LOG_RETENTION_HOURS: 168
     volumes: [kafka-data:/var/lib/kafka/data]     # no port published: reachable only inside the compose network
 
