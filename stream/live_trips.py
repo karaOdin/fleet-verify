@@ -9,22 +9,27 @@ The rules are fleet/live.py, which a test proves identical to the batch.
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from datetime import datetime
 
 from fleet.live import init_state, process
-from fleet.settings import terminals
-from stream.common import BROKER, CFG, POSITIONS, TRIP_EVENTS, device_assignments, hhmm, load_lines, local_time
+from fleet.settings import plane, terminals
+from stream.common import BROKER, CFG, DATA, POSITIONS, TRIP_EVENTS, device_assignments, hhmm, load_lines, local_time
 from stream.heartbeat import Heartbeat, append_events
 
 LINES = None
 ASSIGN: dict[int, dict] = {}
 TERM = terminals()
+PLANE = plane()
 HB = None
 COUNT = {"processed": 0, "trips": 0, "excursions": 0, "data_time": None}
 
 
 def _account(value: dict, events: list[dict], mode: str) -> None:
+    global HB
+    if HB is None:
+        HB = Heartbeat("live_trips")
     COUNT["processed"] += 1
     COUNT["data_time"] = value["fix_time_utc"]
     for e in events:
@@ -51,8 +56,7 @@ def step(value: dict, st: dict | None) -> tuple[list[dict], dict | None]:
     if st is None or st.get("day") != day:           # a new service day starts from scratch
         st = {**init_state(), "day": day}
     line = LINES[a["line"]]
-    from fleet.settings import plane
-    xy = plane().xy([value["lat"]], [value["lon"]])[0]
+    xy = ((value["lon"] - PLANE.lon0) * PLANE.kx, (value["lat"] - PLANE.lat0) * PLANE.ky)   # same as Plane.xy, one point
     s = t.hour * 3600 + t.minute * 60 + t.second
     out = []
     for e in process(st, {"device_id": int(value["device_id"]), "s": s}, line, xy, CFG):
@@ -63,16 +67,17 @@ def step(value: dict, st: dict | None) -> tuple[list[dict], dict | None]:
     return out, st
 
 
-def run_kafka():
+def build_app(group: str, offset_reset: str = "earliest", src_topic: str = POSITIONS, dst_topic: str = TRIP_EVENTS,
+              verbose: bool = True):
+    """The Quix Streams application: positions in, trip events out, state per device (the message key)."""
     from quixstreams import Application
+    from quixstreams.models import TopicConfig
 
-    import os
-
-    # LIVE_GROUP / LIVE_OFFSET_RESET let the visual pipeline start a clean demo (new group, latest offset)
-    app = Application(broker_address=BROKER, consumer_group=os.environ.get("LIVE_GROUP", "live-trips"),
-                      auto_offset_reset=os.environ.get("LIVE_OFFSET_RESET", "earliest"))
-    src = app.topic(POSITIONS, key_deserializer="str", value_deserializer="json")
-    dst = app.topic(TRIP_EVENTS, key_serializer="str", value_serializer="json")
+    app = Application(broker_address=BROKER, consumer_group=group, auto_offset_reset=offset_reset, commit_interval=1.0,
+                      state_dir=str(DATA / "quix-state"), loglevel="INFO" if verbose else "WARNING")
+    tc = TopicConfig(num_partitions=3, replication_factor=1)    # only used if Quix creates the topic
+    src = app.topic(src_topic, key_deserializer="str", value_deserializer="json", config=tc)
+    dst = app.topic(dst_topic, key_serializer="str", value_serializer="json", config=tc)
     sdf = app.dataframe(src)
 
     def stateful(value, state):
@@ -83,9 +88,16 @@ def run_kafka():
         return events
 
     sdf = sdf.apply(stateful, stateful=True, expand=True)
-    sdf = sdf.update(lambda e: print(f"{e['day']} {e['bus']:>6} {e['event']:9} {e['dep_time']} {e['from_name']} -> "
-                                     f"{e['arr_time']} {e['to_name']} ({e['minutes']} min)"))
+    if verbose:
+        sdf = sdf.update(lambda e: print(f"{e['day']} {e['bus']:>6} {e['event']:9} {e['dep_time']} {e['from_name']} -> "
+                                         f"{e['arr_time']} {e['to_name']} ({e['minutes']} min)", flush=True))
     sdf = sdf.to_topic(dst)
+    return app, sdf
+
+
+def run_kafka():
+    # LIVE_GROUP / LIVE_OFFSET_RESET let the visual pipeline start a clean demo (new group, latest offset)
+    app, _ = build_app(os.environ.get("LIVE_GROUP", "live-trips"), os.environ.get("LIVE_OFFSET_RESET", "earliest"))
     app.run()
 
 

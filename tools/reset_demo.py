@@ -35,6 +35,10 @@ def reset(day: str, kafka: bool) -> list[str]:
             if f.name != "papers_cursor.txt":
                 f.unlink() if f.is_file() else shutil.rmtree(f)
         done.append("live state cleared")
+    quix = DATA / "quix-state"            # Quix Streams' local state store (one folder per consumer group)
+    if quix.exists():
+        shutil.rmtree(quix)
+        done.append("Quix state store removed")
     lake = DATA / "lake" / "positions" / f"date={day}"
     if lake.exists():
         shutil.rmtree(lake)
@@ -64,8 +68,9 @@ def reset(day: str, kafka: bool) -> list[str]:
             broker = os.environ.get("KAFKA_BROKER", "localhost:9092")
             admin = AdminClient({"bootstrap.servers": broker})
             existing = set(admin.list_topics(timeout=5).topics)
-            gone = [t for t in TOPICS if t in existing]
-            for f in admin.delete_topics(gone, operation_timeout=10).values():
+            # plus the changelog topics Quix Streams keeps for each consumer group's state
+            gone = [t for t in existing if t in TOPICS or t.startswith("changelog__live-trips")]
+            for f in (admin.delete_topics(gone, operation_timeout=10).values() if gone else []):
                 f.result()
             time.sleep(3)
             for f in admin.create_topics([NewTopic(t, num_partitions=3, replication_factor=1) for t in TOPICS]).values():

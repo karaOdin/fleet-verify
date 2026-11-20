@@ -125,7 +125,7 @@ class Batch:
     def _exec(self, args: list[str]) -> int:
         env = {**os.environ, "DAGSTER_HOME": os.environ.get("DAGSTER_HOME", str(ROOT / ".dagster"))}
         Path(env["DAGSTER_HOME"]).mkdir(parents=True, exist_ok=True)
-        p = subprocess.Popen(["dagster", *args, "-m", "pipeline.definitions"], cwd=ROOT, env=env,
+        p = subprocess.Popen([PY, "-m", "dagster", *args, "-m", "pipeline.definitions"], cwd=ROOT, env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         for line in p.stdout:
             if m := self.STEP.search(line):

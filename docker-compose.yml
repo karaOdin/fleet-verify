@@ -24,7 +24,7 @@ services:
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:v1.1.0
     container_name: fleet-kafka-ui
-    ports: ["8080:8080"]
+    ports: ["${KAFKA_UI_PORT:-8080}:8080"]     # set KAFKA_UI_PORT in .env if 8080 is taken
     environment:
       KAFKA_CLUSTERS_0_NAME: fleet
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
@@ -33,7 +33,7 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: fleet-postgres
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_PORT:-5432}:5432"]     # set POSTGRES_PORT in .env if 5432 is taken
     environment:
       POSTGRES_USER: fleet
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleet}

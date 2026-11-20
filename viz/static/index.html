@@ -238,7 +238,9 @@ function render(){
   const fb=lt.active&&lt.mode==="file";
   setNode("positions",k?(N.positions.rate>0?"active":""):(fb?"":"failed"),k?`${fmt(N.positions.offset)} رسالة · ${Math.round(N.positions.rate)}/s`:(fb?"متجاوَز: من الملف":"غير متصل"));
   const lag=lt.lag;
-  setNode("live_trips",lt.active?(lag>500?"lagging":"active"):(lag>0?"lagging":""),
+  // offsets are committed every second, so a consumer that keeps up still shows about one second of messages
+  const behind=lag!=null&&lag>Math.max(1500,3*(N.positions.rate||0));
+  setNode("live_trips",lt.active?(behind?"lagging":"active"):(lag>0?"lagging":""),
     lt.active?`${fmt(lt.processed)} نقطة · ${fmt(lt.trips)} ر`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
   setNode("trip_events",k&&N.trip_events.offset?"active":"",k?`${fmt(N.trip_events.offset)} حدث`:"—");
   setNode("live_board",lt.trips?"active":"",`${fmt(lt.trips||0)} نصف رحلة`);

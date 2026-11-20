@@ -17,7 +17,7 @@
 
 ## قبل الورشة (الليلة)
 
-1. `docker compose up -d` على الجهاز الذي ستعرض منه، وجرّب الأزرار كلها مرة. **Kafka لم يُجرّب بعد على جهازك.**
+1. `docker compose up -d` على الجهاز الذي ستعرض منه، وجرّب الأزرار كلها مرة. مسار Kafka جُرّب (`tests/test_kafka_e2e.py`). السرعة ×120 أو ×300 يلحق بها live_trips؛ ×600 تُظهر التأخر وحدها.
 2. `docker compose pull` مسبقًا: لا تعتمد على إنترنت القاعة.
 3. شغّل الـbatch مرة قبل البدء (يخلق `lines` و`fleet_registry`)، ثم "بداية نظيفة".
 4. `.env`: `VIZ_ANONYMIZE=1`، `FLEET_POSITIONS_PREFER=inbox`، `VIZ_ADMIN_TOKEN`.

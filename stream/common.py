@@ -54,9 +54,18 @@ def message(device_id: int, fix_time_utc: str, lat: float, lon: float, speed_kn:
                                        "lat": float(lat), "lon": float(lon), "speed_kn": float(speed_kn or 0)}).encode()
 
 
+def _local_minute():
+    local = pl.col("fix_time_utc").str.to_datetime(time_zone="UTC").dt.convert_time_zone(CFG["timezone"])
+    return local.dt.hour().cast(pl.Int32) * 60 + local.dt.minute().cast(pl.Int32)
+
+
 def from_local_time(df, hhmm_start: str):
     """Keep positions at or after a local wall-clock time (for demos that skip the night)."""
-    import polars as pl
     h, m = map(int, hhmm_start.split(":"))
-    local = (pl.col("fix_time_utc").str.to_datetime(time_zone="UTC").dt.convert_time_zone(CFG["timezone"]))
-    return df.filter((local.dt.hour().cast(pl.Int32) * 60 + local.dt.minute().cast(pl.Int32)) >= h * 60 + m)
+    return df.filter(_local_minute() >= h * 60 + m)
+
+
+def before_local_time(df, hhmm_end: str):
+    """Keep positions before a local wall-clock time."""
+    h, m = map(int, hhmm_end.split(":"))
+    return df.filter(_local_minute() < h * 60 + m)
