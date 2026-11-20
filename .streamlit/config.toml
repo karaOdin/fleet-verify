@@ -1,0 +1,10 @@
+# Streamlit dashboard (dashboard/app.py): readable on a projector, no developer menu
+[theme]
+base = "light"
+baseFontSize = 18
+
+[client]
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false

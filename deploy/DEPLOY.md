@@ -112,9 +112,14 @@ New password: `P=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20); printf '
 
 Checked on a throwaway nginx: 401 without a password and with a wrong one; 200 with it (`/_stcore/health` says ok);
 101 on the websocket upgrade of `/_stcore/stream`. The Streamlit daily report reads the same warehouse the batch
-writes (the `fleet-data` volume): after a batch it shows 19 Nov (668 declared, 416 confirmed, 6,907 km, 75 %
-commercial); after `./run-vps.sh reset` it says "No reports yet" until the batch runs again. It shows real bus
-numbers (not anonymised): it stays behind the password.
+writes (the `fleet-data` volume). After Clean start (or `./run-vps.sh reset`) it says "No results yet. Run the
+batch first" and fills in by itself about 5 s after the batch has finished (no reload): the same six numbers as
+the page's "Result of the day" (668 / 71% / 116 / 14 / 6,907.5 / 75%), every bus, one bus's trips, the ER table.
+
+Privacy (until the operator agrees to real numbers): buses as on the pipeline page, "Bus A", "Bus B", ... with the
+same letter for a bus on both pages (`viz/public.py`), also where a row names another bus; no receiver, no Traccar
+device name, no paper notes; paper ids and device ids stay. English only, larger type for the projector
+(`.streamlit/config.toml`). `tests/test_dashboard.py` checks every cell of every table.
 
 Without the dagster site, an SSH tunnel works too: `ssh -L 3001:127.0.0.1:3001 ploi@95.111.253.252`, then
 http://localhost:3001. (The original plan also tunnelled Kafka UI on 8081: it was dropped from this server.)
@@ -166,7 +171,8 @@ lake-sink 256 MiB, dashboard 384 MiB, dagster-web 512 MiB (only on demand). Meas
 | replay ×120 | 818 MiB |
 | batch | 1,011 MiB |
 | the whole browser test (replay, pause, resume, batch) | 1,137 MiB |
-| batch with the Dagster UI and the dashboard on (dashboard showing the results) | 1,434 MiB |
+| at rest, Dagster UI and dashboard on (6 containers) | 874 MiB |
+| batch with the Dagster UI and the dashboard on (dashboard filling in) | 1,402–1,434 MiB |
 
 With the Dagster UI and the dashboard on during the talk, expect about 1.45–1.6 GiB at the peak (a replay and a batch together).
 

@@ -36,41 +36,24 @@ from viz import kafka_metrics  # noqa: E402
 from viz.graph import NODES, EDGES  # noqa: E402
 from fleet.settings import place_en  # noqa: E402
 from viz import samples as SAMPLES  # noqa: E402
+from viz import public  # noqa: E402
+from viz.public import ANON  # noqa: E402
 
 STATE = DATA / "state"
 WH = DATA / "warehouse"
 DAY = os.environ.get("VIZ_DAY", "2026-11-19")
 DEMO_FILE = os.environ.get("VIZ_DEMO_FILE", str(DATA / "inbox" / f"positions_{DAY}.csv.gz"))
 DEMO_FROM = os.environ.get("VIZ_DEMO_FROM", "05:30")
-ANON = os.environ.get("VIZ_ANONYMIZE", "1") == "1"
 ADMIN = os.environ.get("VIZ_ADMIN_TOKEN")
 PY = sys.executable
 
 app = FastAPI(title="fleet-verify pipeline")
 
 
-# ---------------- anonymisation ----------------
+# ---------------- anonymisation: viz/public.py (shared with the dashboard) ----------------
 
-def _letters(n: int) -> str:
-    s = ""
-    n += 1
-    while n:
-        n, r = divmod(n - 1, 26)
-        s = chr(65 + r) + s
-    return s
-
-
-def _bus_alias() -> dict[str, str]:
-    try:
-        from sources import cloudroutes
-        buses = sorted({str(b["bus"]) for b in cloudroutes.registry()})
-    except Exception:
-        buses = []
-    return {b: f"Bus {_letters(i)}" for i, b in enumerate(buses)}
-
-
-ALIAS = _bus_alias()
-show_bus = (lambda b: ALIAS.get(str(b), "Bus ?")) if ANON else (lambda b: f"Bus {b}")
+ALIAS = public.ALIAS
+show_bus = public.show_bus
 
 
 # ---------------- processes the page can start and stop ----------------
@@ -192,24 +175,13 @@ def _results(day: str) -> dict | None:
     f = WH / "trip_verification" / f"{day}.parquet"
     if not f.exists():
         return None
-    key = (day, f.stat().st_mtime)
-    if _results_cache.get("key") == key:
-        return _results_cache["val"]
-    v = pl.read_parquet(f)
-    c = dict(v.group_by("status").len().iter_rows())
-    km_f = WH / "km_report" / f"{day}.parquet"
-    km = pl.read_parquet(km_f) if km_f.exists() else None
-    ident_f = WH / "device_identity" / f"{day}.parquet"
-    ident = pl.read_parquet(ident_f) if ident_f.exists() else None
-    val = {
-        "declared": int(v["paper_id"].is_not_null().sum()),
-        "status": {k: int(x) for k, x in c.items()},
-        "total_km": round(float(km["total_km"].sum()), 1) if km is not None else None,
-        "commercial_pct": round(100 * float(km["commercial_km"].sum()) / float(km["total_km"].sum())) if km is not None else None,
-        "identity": dict(ident.group_by("verdict").len().iter_rows()) if ident is not None else {},
-    }
-    _results_cache.update(key=key, val=val)
-    return val
+    # every file the result reads: during a batch trip_verification is written before km_report, and a key on
+    # trip_verification alone kept km and commercial % at "—" after the batch had finished
+    key = (day, *((WH / a / f"{day}.parquet").stat().st_mtime if (WH / a / f"{day}.parquet").exists() else 0
+                  for a in ("trip_verification", "km_report", "device_identity")))
+    if _results_cache.get("key") != key:
+        _results_cache.update(key=key, val=public.day_results(WH, day))
+    return _results_cache["val"]
 
 
 _pg_cache = {"t": 0, "val": None}

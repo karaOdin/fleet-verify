@@ -307,8 +307,8 @@ function render(){
   $("res-day").textContent=S.day;
   const R=S.results, kp=$("kpis");
   if(R){
-    const st=R.status, conf=(st.ok||0)+(st.ok_dep||0), ver=R.declared-(st.nogps||0);
-    kp.innerHTML=[[fmt(R.declared),"declared trips"],[ver?Math.round(100*conf/ver)+"%":"—","confirmed by GPS"],[fmt(st.diff||0),"time differs"],
+    const st=R.status;
+    kp.innerHTML=[[fmt(R.declared),"declared trips"],[R.confirmed_pct!=null?R.confirmed_pct+"%":"—","confirmed by GPS"],[fmt(st.diff||0),"time differs"],
       [fmt(st.missing||0),"not found"],[fmt(R.total_km),"km"],[(R.commercial_pct??"—")+"%","commercial"]]
       .map(([v,l])=>`<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
   } else kp.innerHTML='<p class="empty">The batch has not run for this day yet.</p>';

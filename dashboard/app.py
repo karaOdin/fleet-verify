@@ -2,77 +2,66 @@
 
     streamlit run dashboard/app.py
 
-Daily tab: the reports Dagster wrote to data/warehouse.
+Daily tab: the reports Dagster wrote to data/warehouse (the same warehouse as the batch).
 Live tab: trip events arriving on Kafka (fleet.trip-events).
+Buses are shown as on the pipeline page (Bus A, B, ...): see dashboard/views.py for what is never shown.
 """
 import json
 import sys
 import time
 from pathlib import Path
 
-import polars as pl
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from stream.common import BROKER, DATA, TRIP_EVENTS  # noqa: E402
-from fleet.settings import place_en  # noqa: E402
+from dashboard import views  # noqa: E402
 
 WH = DATA / "warehouse"
-STATUS = {"ok": "✅ confirmed", "ok_dep": "✅ departure confirmed", "diff": "⚠️ time differs",
-          "dup": "🔁 no separate trip", "missing": "❌ not found", "extra": "➕ not declared", "nogps": "— no GPS"}
 
 st.set_page_config(page_title="Fleet verification", layout="wide")
+# readable on a projector: bigger metrics and headings (Streamlit's own theme sets the base size)
+st.markdown("""<style>
+[data-testid="stMetricValue"] { font-size: 3.2rem; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+[data-testid="stMetricLabel"] p { font-size: 1.15rem; }
+h1 { font-size: 2.6rem !important; } h2, h3 { font-size: 1.9rem !important; }
+</style>""", unsafe_allow_html=True)
+
+st.title("Fleet verification")
 daily, live = st.tabs(["Daily report", "Live"])
 
-
-def days():
-    d = WH / "bus_day_report"
-    return sorted((p.stem for p in d.glob("*.parquet")), reverse=True) if d.exists() else []
-
-
 with daily:
-    ds = days()
+    ds = views.days(WH)
     if not ds:
-        st.info("No reports yet. Run the daily job in Dagster first.")
+        @st.fragment(run_every="5s")      # only this box re-runs; the page fills in when the batch finishes
+        def wait_for_batch():
+            if views.days(WH):            # the batch's last output (bus_day_report) is there
+                st.rerun()
+            st.info("No results yet. Run the batch first (the pipeline page’s “Run the batch” button).")
+
+        wait_for_batch()
     else:
         day = st.selectbox("Day", ds)
-        rep = pl.read_parquet(WH / "bus_day_report" / f"{day}.parquet")
-        ver = pl.read_parquet(WH / "trip_verification" / f"{day}.parquet")
-        km = pl.read_parquet(WH / "km_report" / f"{day}.parquet")
-        ident = pl.read_parquet(WH / "device_identity" / f"{day}.parquet")
-        decl = ver.filter(pl.col("paper_id").is_not_null())
-        c = dict(ver.group_by("status").len().iter_rows())
         cols = st.columns(6)
-        cols[0].metric("Declared trips", decl.height)
-        cols[1].metric("Confirmed", c.get("ok", 0) + c.get("ok_dep", 0))
-        cols[2].metric("Time differs", c.get("diff", 0))
-        cols[3].metric("Not found", c.get("missing", 0))
-        cols[4].metric("Total km", f"{km['total_km'].sum():,.0f}")
-        cols[5].metric("Commercial", f"{100 * km['commercial_km'].sum() / km['total_km'].sum():.0f}%")
+        for col, (label, value) in zip(cols, views.metrics(WH, day) or []):
+            col.metric(label, value)
 
         st.subheader("Every bus")
-        st.dataframe(rep.drop("work_date", "settings_hash").sort("bus"), width="stretch", hide_index=True)
+        st.dataframe(views.every_bus(WH, day), width="stretch", hide_index=True)
 
         st.subheader("Trips of one bus")
-        bus = st.selectbox("Bus", sorted(ver["bus"].unique().to_list()))
-        b = (ver.filter(pl.col("bus") == bus)
-             .select(pl.col("paper_id").alias("Paper"), pl.col("shift").alias("Shift"), pl.col("direction").alias("Written direction"),
-                     pl.format("{} → {}", "dep_time", "arr_time").alias("Declared"),
-                     pl.format("{} → {}", "gps_dep_time", "gps_arr_time").alias("GPS"),
-                     pl.col("actual_direction").map_elements(place_en, return_dtype=pl.Utf8).alias("Actual direction"),
-                     pl.col("delta_dep_min").alias("Departure diff (min)"), pl.col("delta_arr_min").alias("Arrival diff (min)"),
-                     pl.col("tickets").alias("Tickets"), pl.col("status").replace_strict(STATUS).alias("Status")))
-        st.dataframe(b, width="stretch", hide_index=True)
+        bus = st.selectbox("Bus", views.bus_labels(WH, day))
+        st.dataframe(views.trips_of(WH, day, bus), width="stretch", hide_index=True)
 
-        st.subheader("Bus identity (ER)")
-        st.dataframe(ident.filter(pl.col("verdict") != "confirmed").drop("work_date", "settings_hash"),
-                     width="stretch", hide_index=True)
+        st.subheader("Bus identity (ER): devices to review")
+        st.caption("Which device really drove each bus. Not a sanction: a person reviews each case.")
+        st.dataframe(views.identity_review(WH, day), width="stretch", hide_index=True)
 
 with live:
     st.caption(f"Kafka {BROKER} · topic {TRIP_EVENTS}")
     if st.toggle("Run", value=False):
-        from confluent_kafka import Consumer, TopicPartition
+        from confluent_kafka import Consumer
 
         if "events" not in st.session_state:
             st.session_state.events = []
@@ -89,11 +78,9 @@ with live:
                 st.session_state.events.append(json.loads(m.value()))
         ev = st.session_state.events[-200:]
         if ev:
-            df = (pl.DataFrame(ev).select("day", "bus", "event", "dep_time", "from_name", "arr_time", "to_name", "minutes")
-                  .with_columns(pl.col("from_name", "to_name").map_elements(place_en, return_dtype=pl.Utf8)))
             st.metric("Half-trips today", sum(e["event"] == "trip" for e in st.session_state.events))
-            st.dataframe(df.reverse(), width="stretch", hide_index=True)
+            st.dataframe(views.live_events(ev).reverse(), width="stretch", hide_index=True)
         else:
-            st.info("No events yet. Start stream.replay or stream.traccar_poll, then stream.live_trips.")
+            st.info("No events yet. Start the replay on the pipeline page.")
         time.sleep(2)
         st.rerun()
