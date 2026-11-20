@@ -1,0 +1,13 @@
+<section id="kafka">
+<div class="head">
+<p class="eyebrow">KAFKA IN FOUR WORDS</p>
+<h2>A log you can read again</h2>
+</div>
+<div class="grid2">
+<div class="card live in" style="--i:0"><h3>Topic</h3><p class="body">fleet.positions: every fix, in arrival order, kept for a week.</p></div>
+<div class="card live in" style="--i:1"><h3>Key</h3><p class="body">The device. One device’s fixes stay in order, on one partition.</p></div>
+<div class="card live in" style="--i:2"><h3>Offset</h3><p class="body">A place in the log. A reader that stops resumes where it left off.</p></div>
+<div class="card live in" style="--i:3"><h3>Consumer group</h3><p class="body">live_trips and lake_sink read the same log, each at its own pace.</p></div>
+</div>
+<aside>Kafka is a log, not a queue: reading does not delete. That is what the pause demo shows: stop live_trips, positions keep arriving, the lag on its node grows; start it again and it catches up without losing anything. Offsets are also why a demo reset deletes the consumer groups: an old offset past the end of a new topic made a reader start over.</aside>
+</section>

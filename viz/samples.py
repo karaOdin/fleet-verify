@@ -118,7 +118,7 @@ def _gps_note(rows: list[list[str]]) -> str:
     note = f" One fix about every {round(gaps[len(gaps) // 2])} s." if gaps else ""
     if repeats:
         note += (f" {repeats} row{'s' if repeats > 1 else ''} here {'are' if repeats > 1 else 'is'} an exact repeat "
-                 f"of the row above: the source file repeats 1.2 % of its rows, the batch drops them.")
+                 f"of the row above: the source file repeats 1.2 % of its rows; the results are the same with or without them.")
     return note
 
 

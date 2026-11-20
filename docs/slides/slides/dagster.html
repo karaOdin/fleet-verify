@@ -1,0 +1,23 @@
+<section id="dagster">
+<div class="head">
+<p class="eyebrow batch">DAGSTER</p>
+<h2>Daily assets, each one checked</h2>
+</div>
+<div class="row">
+<div class="card batch in" style="--i:0;flex:1.25">
+<h3>One partition per day, every night at 02:30</h3>
+<p class="body mono" style="font-size:28px;line-height:1.7">raw_positions → route_fit → gps_trips<br>→ device_identity → trip_verification<br>→ km_report → bus_day_report<br>→ PostgreSQL</p>
+</div>
+<div class="card batch in" style="--i:1">
+<h3>Four checks</h3>
+<ul class="points">
+<li>All devices fetched</li>
+<li>One bus per device</li>
+<li>Every declared trip checked</li>
+<li>Km categories add up to the total</li>
+</ul>
+</div>
+</div>
+<p class="small">19 November on the workshop server: about 49 seconds from the click to four green checks.</p>
+<aside>27–35 min, demo 3. Run the batch for 19 November: the asset nodes of the bottom lane light up one by one, then the four checks turn green (about 49 s on the VPS). Each asset is a file per day in the warehouse and rows in PostgreSQL; each check is a rule the result must satisfy before anyone reads it.</aside>
+</section>

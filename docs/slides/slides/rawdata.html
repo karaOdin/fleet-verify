@@ -1,0 +1,16 @@
+<section id="rawdata" style="gap:32px">
+<div class="head">
+<p class="eyebrow">RAW DATA</p>
+<h2>What the data really looks like</h2>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<p class="codelabel">positions_2026-11-19.csv.gz · device 293, as stored (UTC, speed in knots)</p>
+<p class="code">device_id,fix_time_utc,lat,lon,speed_kn<br>293,2026-11-19T05:24:08.000+00:00,35.739784,4.518819,4.2<br><span class="hl">293,2026-11-19T05:24:08.000+00:00,35.739784,4.518819,4.2</span><br>293,2026-11-19T05:24:28.000+00:00,35.739778,4.51877,0.0</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<p class="codelabel">road_papers_2026-11-19.json · paper 6477, the same bus (trimmed)</p>
+<p class="code">"bus": "Bus BI", "line": "Line 10", "status": "approved",<br>{"trip_number": 1, "direction": <span class="hl">"aller"</span>, "departure_time": "06:25", "arrival_time": "06:49"}<br>{"trip_number": 2, "direction": <span class="hl">"retour"</span>, "departure_time": "06:56", "arrival_time": "07:33"}</p>
+</div>
+<p style="font-size:28px;color:var(--muted)">A row sent twice (1.2 % of the day). And every direction on this paper is the opposite of where the GPS shows the bus going. Click a source node on the page for the full rows.</p>
+<aside>Raw data part. The page shows the same samples: click Replay / Traccar for the GPS rows, CloudRoutes API for the road paper and its line. Point out: the repeated row (the results are identical with or without the repeats), and paper 6477, where aller and retour are written the other way round on all 7 trips the GPS confirms. No names: receivers and device names are never shown.</aside>
+</section>

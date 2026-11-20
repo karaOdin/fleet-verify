@@ -1,0 +1,27 @@
+<section id="twoways">
+<div class="head">
+<p class="eyebrow">ONE RULE SET, TWO WAYS</p>
+<h2>The same rules run live and daily, and agree</h2>
+</div>
+<div style="display:flex;flex-direction:column;gap:24px">
+<div class="lane live in" style="--i:0">
+<p class="lanetag">LIVE</p>
+<p class="node">Traccar / replay</p><p class="arrow">→</p>
+<p class="node">Kafka</p><p class="arrow">→</p>
+<p class="node">live_trips (Quix)</p><p class="arrow">→</p>
+<p class="node">trips + alerts</p>
+</div>
+<div class="lane batch in" style="--i:1">
+<p class="lanetag">DAILY</p>
+<p class="node">positions + papers</p><p class="arrow">→</p>
+<p class="node">Dagster assets</p><p class="arrow">→</p>
+<p class="node">verification</p><p class="arrow">→</p>
+<p class="node">PostgreSQL</p>
+</div>
+</div>
+<div class="row in" style="--i:2">
+<div class="card"><h3>fleet/</h3><p class="body">Every rule is a pure function (Polars, numpy). No I/O. Both lanes call it.</p></div>
+<div class="card"><h3>The proof is a test</h3><p class="body">test_live_matches_batch replays the day point by point and requires exactly the batch’s trips.</p></div>
+</div>
+<aside>5–12 min. The top lane of the page is streaming, the bottom lane is batch. Same rules in fleet/, two ways to run them. The claim "they give the same result" is not a promise: it is a test that replays the whole day point by point.</aside>
+</section>

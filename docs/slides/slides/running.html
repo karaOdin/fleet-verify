@@ -1,0 +1,13 @@
+<section id="running">
+<div class="head">
+<p class="eyebrow">RUNNING IT</p>
+<h2>One small shared server is enough</h2>
+</div>
+<div class="grid2">
+<div class="card in" style="--i:0"><p class="num">3.8 GiB</p><p class="label">RAM on a 4-core VPS shared with other sites; five containers, each with a memory limit</p></div>
+<div class="card in" style="--i:1"><p class="num">1.14 GiB</p><p class="label">peak for the whole stack, during a replay and a batch</p></div>
+<div class="card live in" style="--i:2"><p class="num">4,820/s</p><p class="label">positions through Kafka and live_trips; ×120 needs about 740/s at the morning peak</p></div>
+<div class="card in" style="--i:3"><p class="num">127.0.0.1</p><p class="label">every published port; Kafka and PostgreSQL publish none; nginx in front</p></div>
+</div>
+<aside>Docker, Compose project "fleet". The page is public behind nginx, the controls need a token, the Dagster UI needs a password. Kafka heap 384 MiB, PostgreSQL shared_buffers 64 MB.</aside>
+</section>

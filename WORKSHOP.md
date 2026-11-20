@@ -24,6 +24,11 @@
 4. `.env`: `VIZ_ANONYMIZE=1`، `FLEET_POSITIONS_PREFER=inbox`، `VIZ_ADMIN_TOKEN`.
 5. لا Traccar حي ولا API حي على المسرح: الإعادة فقط. لا أرقام حافلات، لا أرقام مستلمين، لا شيء عن التحقيق.
 
+## Slides
+
+14 slides in English, with timing cues in the speaker notes: https://claude.ai/artifact/SfWoAAuYbvqfWGQ3Y9cQjc
+(private until shared from its Share menu; exports to PDF or PowerPoint there). Source: `docs/slides/`.
+
 ## On the VPS before the talk
 
 `./run-vps.sh prepare`: starts the stack, starts the Dagster web UI (https://dagster.devcloud.dz, user `fleet`,

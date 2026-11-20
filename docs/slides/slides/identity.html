@@ -1,0 +1,12 @@
+<section id="identity">
+<div class="head">
+<p class="eyebrow batch">ENTITY RESOLUTION</p>
+<h2>Names lie, behaviour decides</h2>
+</div>
+<p class="lead in" style="--i:0">The registry puts device 146 on bus 22620, line 12. All day it drove line 11, as bus H030.</p>
+<div class="row">
+<div class="card in" style="--i:1"><h3>Trust the registry</h3><p class="body">Line 11 driving measured against line 12: two false off-route alerts in the first minute of the replay.</p></div>
+<div class="card batch in" style="--i:2"><h3>Trust the behaviour</h3><p class="body">device_identity matches devices to buses from their routes and trips. Live uses the latest resolved identity from the last batch run.</p></div>
+</div>
+<aside>39–43 min: click device_identity on the page. ER = entity resolution: which device really drove each bus today. Verdicts other than confirmed go to a person. We met this one while preparing the workshop: after a reset the live lane fell back to the registry and raised two false alerts on "Bus W". Now live uses the identity the batch resolved, as production would.</aside>
+</section>

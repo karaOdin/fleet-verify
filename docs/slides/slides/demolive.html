@@ -1,0 +1,22 @@
+<section id="demolive" class="dark">
+<div class="head">
+<p class="eyebrow">LIVE DEMO</p>
+<h2>Replaying 19 November at ×120</h2>
+</div>
+<div class="row">
+<div style="display:flex;flex-direction:column;gap:28px;flex:1">
+<div class="step in" style="--i:0"><p class="stepnum">1</p><p>Clean start</p></div>
+<div class="step in" style="--i:1"><p class="stepnum">2</p><p>Start live_trips</p></div>
+<div class="step in" style="--i:2"><p class="stepnum">3</p><p>Replay the day into Kafka, from 05:30</p></div>
+<div class="step in" style="--i:3"><p class="stepnum">4</p><p>Pause live_trips: the lag grows. Resume: it catches up.</p></div>
+</div>
+<div class="card in" style="--i:4;flex:0.8">
+<p class="label">One real minute = two hours of the day</p>
+<p class="num">9:17</p>
+<p class="label">for the whole day, 288,900 positions</p>
+<p class="num" style="margin-top:12px">0:35</p>
+<p class="label">until the first alert</p>
+</div>
+</div>
+<aside>12–27 min. Cue times after pressing Replay (measured on the VPS): Bus R off route since 06:24 appears at 0:35; Bus O since 06:41 at 0:43; Bus X since 06:54 at 0:50; Bus G since 07:04 at 1:03; Bus O since 07:53 at 1:20; Bus R since 14:12 (22606, school transport) at 4:30. The whole replay ends at 9:17. Each alert shows 10 minutes of data time after its start, about 5 real seconds. Pause around 2:00 for the lag demo, then resume before 4:30 to show the 14:12 alert.</aside>
+</section>
