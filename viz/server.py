@@ -463,12 +463,20 @@ def control(action: str, request: Request, speed: float = 120, day: str | None =
         PROCS.start("live_fallback", ["stream.live_trips", "--file", DEMO_FILE, "--speed", str(speed), "--from", DEMO_FROM])
     elif action == "stop-fallback":
         PROCS.stop("live_fallback")
-    elif action == "reset":                         # a clean live demo: new consumer group, empty event feed
+    elif action == "reset":                         # a clean demo: new consumer group, empty event feed, no results
+        if BATCH.running:
+            raise HTTPException(409, "the batch is running: wait for it to finish")
         for name in ["replay", "live_trips", "live_fallback"]:
             PROCS.stop(name)
         PROCS.group = f"live-trips-{int(time.time())}"
         for f in ["trip-events.jsonl", "alerts.jsonl", "replay.json", "live_trips.json"]:
             (STATE / f).unlink(missing_ok=True)
+        # the day's batch results too (warehouse, PostgreSQL), so Run the batch fills the page and the dashboard
+        # on stage; the latest resolved identity is kept for live (tools/reset_demo.py)
+        from tools.reset_demo import clear_day_results
+        clear_day_results(DAY)
+        with BATCH.lock:
+            BATCH.reset()
     elif action == "batch":
         BATCH.run(day or DAY)
     else:

@@ -50,22 +50,10 @@ def save_latest_identity(day: str) -> str | None:
     return f"latest resolved identity kept ({len(a)} devices, from {day}) in {out.relative_to(DATA)}"
 
 
-def reset(day: str, kafka: bool) -> list[str]:
+def clear_day_results(day: str) -> list[str]:
+    """The day's batch results: warehouse files and PostgreSQL rows. The latest resolved identity is kept
+    first (live uses it). Also run by the page's Clean start, so the batch can be run again on stage."""
     done = []
-    state = DATA / "state"
-    if state.exists():
-        for f in state.iterdir():
-            if f.name != "papers_cursor.txt":
-                f.unlink() if f.is_file() else shutil.rmtree(f)
-        done.append("live state cleared")
-    quix = DATA / "quix-state"            # Quix Streams' local state store (one folder per consumer group)
-    if quix.exists():
-        shutil.rmtree(quix)
-        done.append("Quix state store removed")
-    lake = DATA / "lake" / "positions" / f"date={day}"
-    if lake.exists():
-        shutil.rmtree(lake)
-        done.append(f"lake for {day} removed")
     saved = save_latest_identity(day)
     if saved:
         done.append(saved)
@@ -88,6 +76,26 @@ def reset(day: str, kafka: bool) -> list[str]:
             done.append(f"PostgreSQL rows for {day} removed")
         except Exception as e:
             done.append(f"PostgreSQL NOT reset: {e}")
+    return done
+
+
+def reset(day: str, kafka: bool) -> list[str]:
+    done = []
+    state = DATA / "state"
+    if state.exists():
+        for f in state.iterdir():
+            if f.name != "papers_cursor.txt":
+                f.unlink() if f.is_file() else shutil.rmtree(f)
+        done.append("live state cleared")
+    quix = DATA / "quix-state"            # Quix Streams' local state store (one folder per consumer group)
+    if quix.exists():
+        shutil.rmtree(quix)
+        done.append("Quix state store removed")
+    lake = DATA / "lake" / "positions" / f"date={day}"
+    if lake.exists():
+        shutil.rmtree(lake)
+        done.append(f"lake for {day} removed")
+    done += clear_day_results(day)
     if kafka:
         try:
             from confluent_kafka.admin import AdminClient, NewTopic
