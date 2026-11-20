@@ -78,6 +78,7 @@ of where buses wait between rounds, seeded from 19 Nov).
 
 Nothing counts before the device first reaches a terminal of its line, nor at its overnight parking place.
 `python -m tools.bench_live --mode file|kafka` measures how many positions per second `live_trips` handles.
+On the VPS (4 vCPU, inside `fleet-viz`): 4,820 positions/s through Kafka; ×120 needs about 740/s at the morning peak.
 `silent` runs on the stream's own clock (latest fix time), one clock per Kafka partition, so a replay behaves
 like real time. Alerts are for the dispatcher to look at ("For the dispatcher to review"), never a sanction.
 `docs/alerts-2026-11-19.md` lists every alert of 19 Nov and explains the rules against that day.

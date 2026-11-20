@@ -14,7 +14,7 @@ import time
 from collections import defaultdict
 
 import polars as pl
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, TopicPartition
 
 from stream.common import BROKER, DATA, POSITIONS, local_time
 from stream.heartbeat import Heartbeat
@@ -26,13 +26,14 @@ def main():
     c = Consumer({"bootstrap.servers": BROKER, "group.id": "lake-sink", "enable.auto.commit": False,
                   "auto.offset.reset": "earliest"})
     c.subscribe([POSITIONS])
-    buf, last = [], time.monotonic()
+    buf, last, upto = [], time.monotonic(), {}      # upto: partition -> next offset to read, for what buf holds
     hb, written, files = Heartbeat("lake_sink"), 0, 0
     try:
         while True:
             m = c.poll(1.0)
             if m is not None and not m.error():
                 buf.append(json.loads(m.value()))
+                upto[m.partition()] = m.offset() + 1
             hb.beat(buffered=len(buf), written=written, files=files)
             if buf and (len(buf) >= FLUSH_N or time.monotonic() - last >= FLUSH_S):
                 by_day = defaultdict(list)
@@ -42,11 +43,14 @@ def main():
                     d = DATA / "lake" / "positions" / f"date={day}"
                     d.mkdir(parents=True, exist_ok=True)
                     pl.DataFrame(rows).write_parquet(d / f"part-{time.time_ns()}.parquet")
-                c.commit(asynchronous=False)
+                # commit exactly what was written. A plain commit() uses the consumer's offset store, which is
+                # empty after an offset reset (topics recreated by reset_demo --kafka): it failed with
+                # _NO_OFFSET, the container restarted and wrote the same positions again, in a loop.
+                c.commit(offsets=[TopicPartition(POSITIONS, p, o) for p, o in upto.items()], asynchronous=False)
                 written += len(buf)
                 files += len(by_day)
                 print(f"wrote {len(buf)} positions ({', '.join(f'{k}: {len(v)}' for k, v in by_day.items())})", flush=True)
-                buf, last = [], time.monotonic()
+                buf, last, upto = [], time.monotonic(), {}
     finally:
         c.close()
 
