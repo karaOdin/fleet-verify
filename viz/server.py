@@ -415,6 +415,37 @@ def code(node: str):
     return out
 
 
+def _lake_sink_pause(on: bool, wait_s: float = 12) -> None:
+    """Ask the lake-sink container to leave its consumer group and drop its buffer (stream/lake_sink.py),
+    and wait for its answer; no wait when no lake_sink is alive."""
+    ctl = DATA / "control"
+    ctl.mkdir(parents=True, exist_ok=True)
+    if not on:
+        (ctl / "lake_sink.pause").unlink(missing_ok=True)
+        return
+    (ctl / "lake_sink.pause").touch()
+    end = time.monotonic() + wait_s
+    while _alive(_hb("lake_sink")) and not (ctl / "lake_sink.paused").exists() and time.monotonic() < end:
+        time.sleep(0.25)
+
+
+def clean_start() -> list[str]:
+    """Empty topics, no consumer groups, an empty lake and no results for the day, the live state cleared:
+    exactly what ./run-vps.sh prepare leaves (tools/reset_demo.py). Live keeps the latest resolved identity."""
+    from tools import reset_demo
+    for name in ["replay", "live_trips", "live_fallback", "lake_sink"]:
+        PROCS.stop(name)
+    _lake_sink_pause(True)
+    try:
+        done = reset_demo.reset(DAY, kafka=True, group_wait=20)
+    finally:
+        _lake_sink_pause(False)
+    PROCS.group = f"live-trips-{int(time.time())}"
+    with BATCH.lock:
+        BATCH.reset()
+    return done
+
+
 @app.post("/api/control/{action}")
 def control(action: str, request: Request, speed: float = 120, day: str | None = None):
     _admin(request)
@@ -435,20 +466,10 @@ def control(action: str, request: Request, speed: float = 120, day: str | None =
         PROCS.start("live_fallback", ["stream.live_trips", "--file", DEMO_FILE, "--speed", str(speed), "--from", DEMO_FROM])
     elif action == "stop-fallback":
         PROCS.stop("live_fallback")
-    elif action == "reset":                         # a clean demo: new consumer group, empty event feed, no results
+    elif action == "reset":                         # Clean start: the state ./run-vps.sh prepare gives
         if BATCH.running:
             raise HTTPException(409, "the batch is running: wait for it to finish")
-        for name in ["replay", "live_trips", "live_fallback"]:
-            PROCS.stop(name)
-        PROCS.group = f"live-trips-{int(time.time())}"
-        for f in ["trip-events.jsonl", "alerts.jsonl", "replay.json", "live_trips.json"]:
-            (STATE / f).unlink(missing_ok=True)
-        # the day's batch results too (warehouse, PostgreSQL), so Run the batch fills the page and the dashboard
-        # on stage; the latest resolved identity is kept for live (tools/reset_demo.py)
-        from tools.reset_demo import clear_day_results
-        clear_day_results(DAY)
-        with BATCH.lock:
-            BATCH.reset()
+        clean_start()
     elif action == "batch":
         BATCH.run(day or DAY)
     else:

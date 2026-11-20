@@ -79,7 +79,50 @@ def clear_day_results(day: str) -> list[str]:
     return done
 
 
-def reset(day: str, kafka: bool) -> list[str]:
+def reset_kafka(group_wait: float = 60) -> list[str]:
+    """Every consumer group's offsets deleted (retried for group_wait s while a member is still there), then the
+    demo topics deleted and recreated empty."""
+    done = []
+    try:
+        from confluent_kafka.admin import AdminClient, NewTopic
+        broker = os.environ.get("KAFKA_BROKER", "localhost:9092")
+        admin = AdminClient({"bootstrap.servers": broker})
+        groups = sorted(g.group_id for g in admin.list_consumer_groups(request_timeout=10).result().valid)
+        deleted, kept, end = [], {}, time.monotonic() + group_wait
+        while groups:
+            for g, f in admin.delete_consumer_groups(groups, request_timeout=10).items():
+                try:
+                    f.result()
+                    deleted.append(g)
+                    kept.pop(g, None)
+                except Exception as e:             # a member is still there: a running consumer, or one
+                    kept[g] = str(e)               # killed without closing, until its session times out
+            groups = sorted(kept)
+            if not groups or time.monotonic() > end:
+                break
+            time.sleep(2)
+        kept = [f"{g} ({e})" for g, e in kept.items()]
+        done.append(f"consumer groups deleted: {', '.join(deleted) or 'none'}")
+        if kept:
+            done.append(f"consumer groups NOT deleted (stop their consumers first): {'; '.join(kept)}")
+        existing = set(admin.list_topics(timeout=5).topics)
+        # plus the changelog topics Quix Streams keeps for each consumer group's state
+        gone = [t for t in existing if t in TOPICS or t.startswith("changelog__live-trips")]
+        for f in (admin.delete_topics(gone, operation_timeout=10).values() if gone else []):
+            f.result()
+        time.sleep(3)
+        for f in admin.create_topics([NewTopic(t, num_partitions=3, replication_factor=1) for t in TOPICS]).values():
+            try:
+                f.result()
+            except Exception:
+                pass
+        done.append(f"Kafka topics recreated empty: {', '.join(TOPICS)}")
+    except Exception as e:
+        done.append(f"Kafka NOT reset: {e}")
+    return done
+
+
+def reset(day: str, kafka: bool, group_wait: float = 60) -> list[str]:
     done = []
     state = DATA / "state"
     if state.exists():
@@ -97,42 +140,7 @@ def reset(day: str, kafka: bool) -> list[str]:
         done.append(f"lake for {day} removed")
     done += clear_day_results(day)
     if kafka:
-        try:
-            from confluent_kafka.admin import AdminClient, NewTopic
-            broker = os.environ.get("KAFKA_BROKER", "localhost:9092")
-            admin = AdminClient({"bootstrap.servers": broker})
-            groups = sorted(g.group_id for g in admin.list_consumer_groups(request_timeout=10).result().valid)
-            deleted, kept, end = [], {}, time.monotonic() + 60
-            while groups:
-                for g, f in admin.delete_consumer_groups(groups, request_timeout=10).items():
-                    try:
-                        f.result()
-                        deleted.append(g)
-                        kept.pop(g, None)
-                    except Exception as e:             # a member is still there: a running consumer, or one
-                        kept[g] = str(e)               # killed without closing, until its session times out
-                groups = sorted(kept)
-                if not groups or time.monotonic() > end:
-                    break
-                time.sleep(5)
-            kept = [f"{g} ({e})" for g, e in kept.items()]
-            done.append(f"consumer groups deleted: {', '.join(deleted) or 'none'}")
-            if kept:
-                done.append(f"consumer groups NOT deleted (stop their consumers first): {'; '.join(kept)}")
-            existing = set(admin.list_topics(timeout=5).topics)
-            # plus the changelog topics Quix Streams keeps for each consumer group's state
-            gone = [t for t in existing if t in TOPICS or t.startswith("changelog__live-trips")]
-            for f in (admin.delete_topics(gone, operation_timeout=10).values() if gone else []):
-                f.result()
-            time.sleep(3)
-            for f in admin.create_topics([NewTopic(t, num_partitions=3, replication_factor=1) for t in TOPICS]).values():
-                try:
-                    f.result()
-                except Exception:
-                    pass
-            done.append(f"Kafka topics recreated empty: {', '.join(TOPICS)}")
-        except Exception as e:
-            done.append(f"Kafka NOT reset: {e}")
+        done += reset_kafka(group_wait)
     return done
 
 

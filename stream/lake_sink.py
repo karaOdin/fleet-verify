@@ -24,17 +24,36 @@ from stream.heartbeat import Heartbeat
 FLUSH_S, FLUSH_N = 30, 20_000
 
 
+CONTROL = DATA / "control"
+PAUSE, PAUSED = CONTROL / "lake_sink.pause", CONTROL / "lake_sink.paused"
+
+
 def main():
     # docker stop sends SIGTERM to PID 1: leave through `finally`, so close() takes the consumer out of its
     # group at once (otherwise the broker keeps it for the session timeout and the group cannot be deleted)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    hb = Heartbeat("lake_sink")
+    while True:
+        run(hb)
+        # Clean start on the page asked for a pause (data/control/lake_sink.pause): it deletes the consumer
+        # groups, recreates the topics and empties the lake, then removes the file. What was buffered is dropped.
+        CONTROL.mkdir(parents=True, exist_ok=True)
+        PAUSED.touch()
+        while PAUSE.exists():
+            hb.beat(paused=True, buffered=0, written=0, files=0)
+            time.sleep(0.5)
+        PAUSED.unlink(missing_ok=True)
+
+
+def run(hb):
+    """Consume until a pause is asked for. Leaves the consumer group when it returns."""
     c = Consumer({"bootstrap.servers": BROKER, "group.id": "lake-sink", "enable.auto.commit": False,
                   "auto.offset.reset": "earliest"})
     c.subscribe([POSITIONS])
     buf, last, upto = [], time.monotonic(), {}      # upto: partition -> next offset to read, for what buf holds
-    hb, written, files = Heartbeat("lake_sink"), 0, 0
+    written, files = 0, 0
     try:
-        while True:
+        while not PAUSE.exists():
             m = c.poll(1.0)
             if m is not None and not m.error():
                 buf.append(json.loads(m.value()))
@@ -58,7 +77,6 @@ def main():
                 buf, last, upto = [], time.monotonic(), {}
     finally:
         c.close()
-
 
 if __name__ == "__main__":
     main()

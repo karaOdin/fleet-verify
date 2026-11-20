@@ -1,5 +1,5 @@
-"""Clean start on the page empties the live feed AND the day's batch results, so Run the batch fills the page
-and the dashboard again on stage. The latest resolved identity is kept for live."""
+"""Clean start on the page leaves what ./run-vps.sh prepare leaves: empty topics, no consumer groups, an empty
+lake and no batch results for the day, the live state cleared. The latest resolved identity is kept for live."""
 import json
 
 import polars as pl
@@ -10,12 +10,19 @@ import tools.reset_demo as reset_demo
 from viz import server
 
 TOKEN = "clean-start-test-token"
+KAFKA_CALLS: list = []
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ADMIN", TOKEN)
     monkeypatch.setattr(server, "STATE", tmp_path / "state")
+    monkeypatch.setattr(server, "DATA", tmp_path)
+    KAFKA_CALLS.clear()
+    calls = KAFKA_CALLS
+    monkeypatch.setattr(reset_demo, "reset_kafka", lambda group_wait=60: calls.append(group_wait) or ["kafka reset"])
+    (tmp_path / "lake" / "positions" / f"date={server.DAY}").mkdir(parents=True)
+    (tmp_path / "lake" / "positions" / f"date={server.DAY}" / "part-1.parquet").write_bytes(b"x")
     monkeypatch.setattr(reset_demo, "DATA", tmp_path)
     monkeypatch.delenv("POSTGRES_URL", raising=False)
     (tmp_path / "state").mkdir()
@@ -46,6 +53,9 @@ def test_clean_start_clears_the_day_results(env):
     saved = json.loads((env / "identity" / "latest.json").read_text())
     assert saved["assignments"]["146"] == {"bus": "22620", "line": "11"}
     assert server.BATCH.ok is None and server.BATCH.checks == {}
+    assert KAFKA_CALLS == [20]                                                     # topics and consumer groups reset
+    assert not (env / "lake" / "positions" / f"date={server.DAY}").exists()     # the day's lake is empty
+    assert not (env / "control" / "lake_sink.pause").exists()                    # lake_sink resumes
 
 
 def test_clean_start_waits_for_a_running_batch(env):
