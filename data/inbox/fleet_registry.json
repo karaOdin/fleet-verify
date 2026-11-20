@@ -1,0 +1,345 @@
+{
+ "note": "Fleet registry as CloudRoutes stores it: each bus, its assigned line, and the Traccar device configured for it. Device ids here were filled from the device-name convention; the identity step checks them against behaviour.",
+ "buses": [
+  {
+   "bus": "22222",
+   "line": "18",
+   "traccar_device_id": null
+  },
+  {
+   "bus": "22403",
+   "line": "16",
+   "traccar_device_id": 135
+  },
+  {
+   "bus": "22471",
+   "line": "10",
+   "traccar_device_id": 147
+  },
+  {
+   "bus": "22475",
+   "line": "17",
+   "traccar_device_id": 148
+  },
+  {
+   "bus": "22480",
+   "line": "10",
+   "traccar_device_id": 157
+  },
+  {
+   "bus": "22482",
+   "line": "10",
+   "traccar_device_id": 150
+  },
+  {
+   "bus": "22483",
+   "line": "18",
+   "traccar_device_id": 151
+  },
+  {
+   "bus": "22485",
+   "line": "12",
+   "traccar_device_id": 152
+  },
+  {
+   "bus": "22486",
+   "line": "17",
+   "traccar_device_id": 153
+  },
+  {
+   "bus": "22488",
+   "line": "12",
+   "traccar_device_id": 149
+  },
+  {
+   "bus": "22489",
+   "line": "05",
+   "traccar_device_id": 154
+  },
+  {
+   "bus": "22490",
+   "line": "12",
+   "traccar_device_id": 155
+  },
+  {
+   "bus": "22491",
+   "line": "16",
+   "traccar_device_id": 156
+  },
+  {
+   "bus": "22492",
+   "line": "04",
+   "traccar_device_id": 127
+  },
+  {
+   "bus": "22493",
+   "line": "12",
+   "traccar_device_id": 145
+  },
+  {
+   "bus": "22494",
+   "line": "04",
+   "traccar_device_id": 128
+  },
+  {
+   "bus": "22605",
+   "line": "16",
+   "traccar_device_id": 129
+  },
+  {
+   "bus": "22606",
+   "line": "10",
+   "traccar_device_id": 130
+  },
+  {
+   "bus": "22607",
+   "line": "12",
+   "traccar_device_id": 131
+  },
+  {
+   "bus": "22608",
+   "line": "11",
+   "traccar_device_id": 132
+  },
+  {
+   "bus": "22618",
+   "line": "17",
+   "traccar_device_id": 133
+  },
+  {
+   "bus": "22619",
+   "line": "05",
+   "traccar_device_id": 134
+  },
+  {
+   "bus": "22620",
+   "line": "12",
+   "traccar_device_id": 146
+  },
+  {
+   "bus": "22621",
+   "line": "17",
+   "traccar_device_id": 136
+  },
+  {
+   "bus": "22622",
+   "line": "16",
+   "traccar_device_id": 137
+  },
+  {
+   "bus": "22623",
+   "line": "17",
+   "traccar_device_id": 138
+  },
+  {
+   "bus": "22624",
+   "line": "17",
+   "traccar_device_id": 139
+  },
+  {
+   "bus": "22625",
+   "line": "18",
+   "traccar_device_id": 140
+  },
+  {
+   "bus": "22626",
+   "line": "10",
+   "traccar_device_id": 141
+  },
+  {
+   "bus": "22651",
+   "line": "04",
+   "traccar_device_id": 142
+  },
+  {
+   "bus": "22652",
+   "line": "11",
+   "traccar_device_id": 143
+  },
+  {
+   "bus": "2282",
+   "line": "12",
+   "traccar_device_id": null
+  },
+  {
+   "bus": "5555",
+   "line": "16",
+   "traccar_device_id": null
+  },
+  {
+   "bus": "H001",
+   "line": "12",
+   "traccar_device_id": 295
+  },
+  {
+   "bus": "H002",
+   "line": "10",
+   "traccar_device_id": 296
+  },
+  {
+   "bus": "H003",
+   "line": "05",
+   "traccar_device_id": 297
+  },
+  {
+   "bus": "H004",
+   "line": "11",
+   "traccar_device_id": 298
+  },
+  {
+   "bus": "H005",
+   "line": "04",
+   "traccar_device_id": 299
+  },
+  {
+   "bus": "H006",
+   "line": "17",
+   "traccar_device_id": 300
+  },
+  {
+   "bus": "H007",
+   "line": "04",
+   "traccar_device_id": 272
+  },
+  {
+   "bus": "H008",
+   "line": "16",
+   "traccar_device_id": 273
+  },
+  {
+   "bus": "H009",
+   "line": "11",
+   "traccar_device_id": 274
+  },
+  {
+   "bus": "H010",
+   "line": "05",
+   "traccar_device_id": 275
+  },
+  {
+   "bus": "H011",
+   "line": "04",
+   "traccar_device_id": 276
+  },
+  {
+   "bus": "H012",
+   "line": "16",
+   "traccar_device_id": 277
+  },
+  {
+   "bus": "H013",
+   "line": "10",
+   "traccar_device_id": 278
+  },
+  {
+   "bus": "H014",
+   "line": "17",
+   "traccar_device_id": 279
+  },
+  {
+   "bus": "H015",
+   "line": "04",
+   "traccar_device_id": 280
+  },
+  {
+   "bus": "H016",
+   "line": "17",
+   "traccar_device_id": 281
+  },
+  {
+   "bus": "H017",
+   "line": "12",
+   "traccar_device_id": 282
+  },
+  {
+   "bus": "H018",
+   "line": "17",
+   "traccar_device_id": 283
+  },
+  {
+   "bus": "H019",
+   "line": "05",
+   "traccar_device_id": 284
+  },
+  {
+   "bus": "H020",
+   "line": "11",
+   "traccar_device_id": 285
+  },
+  {
+   "bus": "H021",
+   "line": "10",
+   "traccar_device_id": 286
+  },
+  {
+   "bus": "H022",
+   "line": "12",
+   "traccar_device_id": 287
+  },
+  {
+   "bus": "H023",
+   "line": "11",
+   "traccar_device_id": 288
+  },
+  {
+   "bus": "H024",
+   "line": "10",
+   "traccar_device_id": 289
+  },
+  {
+   "bus": "H025",
+   "line": "10",
+   "traccar_device_id": 290
+  },
+  {
+   "bus": "H026",
+   "line": "04",
+   "traccar_device_id": 291
+  },
+  {
+   "bus": "H027",
+   "line": "10",
+   "traccar_device_id": 292
+  },
+  {
+   "bus": "H028",
+   "line": "10",
+   "traccar_device_id": 293
+  },
+  {
+   "bus": "H029",
+   "line": "17",
+   "traccar_device_id": 294
+  },
+  {
+   "bus": "H030",
+   "line": "11",
+   "traccar_device_id": 266
+  },
+  {
+   "bus": "H031",
+   "line": "11",
+   "traccar_device_id": 271
+  },
+  {
+   "bus": "H032",
+   "line": "11",
+   "traccar_device_id": 268
+  },
+  {
+   "bus": "H033",
+   "line": "04",
+   "traccar_device_id": 267
+  },
+  {
+   "bus": "H034",
+   "line": "10",
+   "traccar_device_id": 270
+  },
+  {
+   "bus": "H035",
+   "line": "05",
+   "traccar_device_id": 269
+  }
+ ]
+}

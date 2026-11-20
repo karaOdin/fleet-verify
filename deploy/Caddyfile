@@ -1,0 +1,22 @@
+# DOMAIN, ADMIN_USER and ADMIN_HASH come from .env
+# ADMIN_HASH: docker run --rm caddy:2.8 caddy hash-password --plaintext 'your-password'
+pipeline.{$DOMAIN} {
+	encode gzip
+	reverse_proxy viz:8000 {
+		flush_interval -1        # server-sent events: send each update at once
+	}
+}
+
+dagster.{$DOMAIN} {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_HASH}
+	}
+	reverse_proxy dagster-web:3000
+}
+
+kafka.{$DOMAIN} {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_HASH}
+	}
+	reverse_proxy kafka-ui:8080
+}

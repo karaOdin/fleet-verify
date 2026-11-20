@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>خط البيانات الحيّ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: control-room page — header, the pipeline drawing (two lanes), then three panels: live trips, daily results, controls */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --ink:#132029; --muted:#5f6d78; --line:#d8dee3;
+  --lane-live:#e9f3f6; --lane-batch:#f1eef8;
+  --k-source:#3c5566; --k-topic:#c2581b; --k-processor:#0c7a83; --k-store:#3d4fa8; --k-asset:#6a45a6; --k-sink:#2e7d4f;
+  --on:#14965a; --warn:#c77a00; --bad:#c62f2a; --idle:#a3adb5;
+  --f-ar:"IBM Plex Sans Arabic",system-ui,"Segoe UI",Tahoma,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1418; --panel:#141e24; --ink:#e4ecf0; --muted:#93a3ad; --line:#26343d;
+  --lane-live:#10232a; --lane-batch:#1a1729;
+  --k-source:#9db4c3; --k-topic:#f08a4b; --k-processor:#3cc3cc; --k-store:#8f9dff; --k-asset:#b893f0; --k-sink:#5fcf8f;
+  --on:#3ddc8a; --warn:#f2b04a; --bad:#ff7b72; --idle:#5b6873; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1418; --panel:#141e24; --ink:#e4ecf0; --muted:#93a3ad; --line:#26343d;
+  --lane-live:#10232a; --lane-batch:#1a1729;
+  --k-source:#9db4c3; --k-topic:#f08a4b; --k-processor:#3cc3cc; --k-store:#8f9dff; --k-asset:#b893f0; --k-sink:#5fcf8f;
+  --on:#3ddc8a; --warn:#f2b04a; --bad:#ff7b72; --idle:#5b6873; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ar);font-size:15px;line-height:1.55}
+.wrap{max-width:1320px;margin:0 auto;padding-block:18px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px}
+h1{margin:0;font-size:1.55rem;font-weight:700;text-wrap:balance}
+h1 small{font-family:var(--f-mono);font-weight:500;font-size:.8rem;color:var(--muted);margin-inline-start:8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-family:var(--f-mono);font-size:.78rem;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);display:inline-flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--idle);display:inline-block}
+.dot.on{background:var(--on);box-shadow:0 0 0 3px color-mix(in srgb,var(--on) 25%,transparent)}
+.dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+svg#g{display:block;width:100%;min-width:980px;height:auto;direction:ltr}
+.lane-label{font-family:var(--f-ar);font-size:15px;font-weight:600;fill:var(--muted)}
+.lane-tech{font-family:var(--f-mono);font-size:12px;fill:var(--muted)}
+.node{cursor:pointer}
+.node rect.box{fill:var(--panel);stroke:var(--line);stroke-width:1.5}
+.node .bar{opacity:.9}
+.node .title{font-family:var(--f-mono);font-size:13px;font-weight:600;fill:var(--ink)}
+.node .sub{font-family:var(--f-ar);font-size:11.5px;fill:var(--muted)}
+.node .metric{font-family:var(--f-mono);font-size:13px;font-weight:500;fill:var(--ink)}
+.node:hover rect.box,.node:focus-visible rect.box{stroke:var(--ink)}
+.node.active rect.box{stroke:var(--on);stroke-width:2.2}
+.node.running rect.box{stroke:var(--warn);stroke-width:2.2;stroke-dasharray:6 4;animation:dash 1s linear infinite}
+.node.failed rect.box{stroke:var(--bad);stroke-width:2.2}
+.node.lagging rect.box{stroke:var(--warn);stroke-width:2.2}
+@keyframes dash{to{stroke-dashoffset:-20}}
+.edge{fill:none;stroke:var(--line);stroke-width:2}
+.edge.hot{stroke:color-mix(in srgb,var(--on) 55%,var(--line))}
+.particle{fill:var(--on)}
+.particle.batch{fill:var(--k-asset)}
+.panels{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:16px}
+@media (max-width:980px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0;display:grid;gap:10px;align-content:start}
+.panel h2{margin:0;font-size:1.05rem;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.panel h2 span{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);font-weight:500}
+.feed{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:330px;overflow:auto}
+.feed li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 10px;border-radius:9px;background:var(--bg)}
+.feed li.new{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:color-mix(in srgb,var(--on) 30%,var(--bg))}}
+.feed .bus{font-weight:600;white-space:nowrap}
+.feed .route{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed .time{font-family:var(--f-mono);font-size:.82rem;color:var(--muted);direction:ltr;white-space:nowrap}
+.feed .exc{color:var(--warn)}
+.empty{color:var(--muted);font-size:.9rem}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi{background:var(--bg);border-radius:10px;padding:8px 10px;display:grid}
+.kpi b{font-family:var(--f-mono);font-size:1.35rem;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--muted);font-size:.8rem}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.88rem}
+.checks li{display:flex;gap:8px;align-items:center}
+.checks code{font-family:var(--f-mono);font-size:.8rem}
+.ctl{display:grid;gap:8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select,input{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 11px}
+button{cursor:pointer} button:hover{border-color:var(--ink)}
+button.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+:focus-visible{outline:2px solid var(--k-processor);outline-offset:2px}
+.note{color:var(--muted);font-size:.82rem;margin:0}
+.msg{font-size:.85rem;min-height:1.2em}
+.msg.err{color:var(--bad)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;width:min(920px,94vw);max-height:86vh}
+dialog::backdrop{background:rgb(0 0 0 / .45)}
+.dlg-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);gap:12px}
+.dlg-head h3{margin:0;font-family:var(--f-mono);font-size:1rem}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--panel)}
+pre.code{margin:0;padding:14px 16px;overflow:auto;max-height:64vh;font-family:var(--f-mono);font-size:12.5px;line-height:1.55;direction:ltr;text-align:left;tab-size:4}
+pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2em;text-align:right;margin-right:12px}
+@media (prefers-reduced-motion:reduce){.node.running rect.box{animation:none}.feed li.new{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>خط البيانات الحيّ <small id="day">fleet-verify</small></h1>
+    <div class="chips">
+      <span class="chip"><span class="dot" id="k-dot"></span><span id="k-txt">Kafka</span></span>
+      <span class="chip"><span class="dot" id="l-dot"></span><span id="l-txt">live_trips</span></span>
+      <span class="chip"><span class="dot" id="b-dot"></span><span id="b-txt">Dagster</span></span>
+    </div>
+  </header>
+
+  <section class="stage" aria-label="مخطط خط البيانات">
+    <svg id="g" viewBox="0 0 1260 580" role="img" aria-label="العقد من المصدر إلى التقارير">
+      <rect x="6" y="48" width="1248" height="232" rx="14" fill="var(--lane-live)"></rect>
+      <rect x="6" y="300" width="1248" height="270" rx="14" fill="var(--lane-batch)"></rect>
+      <text class="lane-label" x="1236" y="40" text-anchor="end">مباشر — كل نقطة GPS لحظة وصولها</text>
+      <text class="lane-tech" x="30" y="40">streaming · Kafka + Quix Streams</text>
+      <g id="edges"></g><g id="particles"></g><g id="nodes"></g>
+      <text class="lane-tech" x="30" y="560">batch · Dagster · كل يوم 02:30 · قسم لكل يوم</text>
+      <text class="lane-label" x="1236" y="560" text-anchor="end">يومي — التحقق، ER، الكيلومترات</text>
+    </svg>
+  </section>
+
+  <section class="panels">
+    <div class="panel">
+      <h2>رحلات تحدث الآن <span id="feed-count">0 نصف رحلة</span></h2>
+      <ul class="feed" id="feed"><li class="empty">لا أحداث بعد. شغّل الإعادة من لوحة التحكم.</li></ul>
+    </div>
+    <div class="panel">
+      <h2>نتيجة اليوم <span id="res-day"></span></h2>
+      <div class="kpis" id="kpis"></div>
+      <ul class="checks" id="checks"></ul>
+      <p class="note">الحكم على الرحلة توصية لمراجع بشري، لا عقوبة آلية.</p>
+    </div>
+    <div class="panel ctl">
+      <h2>التحكم في العرض <span id="group"></span></h2>
+      <div class="row">
+        <label for="speed">السرعة</label>
+        <select id="speed"><option value="60">×60</option><option value="120" selected>×120</option><option value="300">×300</option><option value="600">×600</option></select>
+      </div>
+      <div class="row">
+        <button class="primary" data-a="replay" type="button">▶ إعادة اليوم في Kafka</button>
+        <button data-a="stop-replay" type="button">■ إيقاف</button>
+      </div>
+      <div class="row">
+        <button data-a="start-live" type="button">▶ live_trips</button>
+        <button data-a="stop-live" type="button">⏸ أوقفه (شاهد التأخر)</button>
+        <button data-a="start-lake" type="button">▶ lake_sink</button>
+      </div>
+      <div class="row">
+        <button class="primary" data-a="batch" type="button">▶ تشغيل الـbatch</button>
+        <button data-a="reset" type="button">⟲ بداية نظيفة</button>
+      </div>
+      <div class="row">
+        <button data-a="fallback" type="button">بدون Kafka: نفس المنطق من الملف</button>
+        <button data-a="stop-fallback" type="button">■</button>
+      </div>
+      <div class="row">
+        <label for="token">مفتاح التحكم</label>
+        <input id="token" type="password" autocomplete="off" placeholder="VIZ_ADMIN_TOKEN" size="16">
+      </div>
+      <p class="msg" id="msg" role="status"></p>
+    </div>
+  </section>
+  <p class="note">اضغط أي عقدة لترى الكود الحقيقي الذي يشغّلها.</p>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <div class="dlg-head"><h3 id="dlg-title"></h3><button type="button" id="dlg-close">إغلاق</button></div>
+  <div class="tabs" id="dlg-tabs" role="tablist"></div>
+  <pre class="code" id="dlg-code"></pre>
+</dialog>
+
+<script>
+(function(){
+const W=188,H=70, NS="http://www.w3.org/2000/svg";
+const KIND={source:"--k-source",topic:"--k-topic",processor:"--k-processor",store:"--k-store",asset:"--k-asset",sink:"--k-sink"};
+let G=null, S=null, paths={}, nodeEls={}, parts=[], tripsSeen=0;
+const fmt=n=>n==null?"—":Number(n).toLocaleString("en-US");
+const $=id=>document.getElementById(id);
+const el=(tag,attrs,parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e};
+
+function token(){try{return localStorage.getItem("vizToken")||""}catch(e){return ""}}
+$("token").value=token();
+$("token").addEventListener("change",e=>{try{localStorage.setItem("vizToken",e.target.value)}catch(_){}});
+
+async function init(){
+  G=await (await fetch("api/graph")).json();
+  $("day").textContent=G.day;
+  const eg=$("edges"), ng=$("nodes"), byId={};
+  G.nodes.forEach(n=>byId[n.id]=n);
+  G.edges.forEach(([a,b,lane])=>{
+    const A=byId[a],B=byId[b];
+    let x1=A.x+W/2,y1=A.y,x2=B.x-W/2,y2=B.y;
+    if(Math.abs(A.x-B.x)<10){x1=A.x;y1=A.y+(B.y>A.y?H/2:-H/2);x2=B.x;y2=B.y+(B.y>A.y?-H/2:H/2)}
+    const dx=Math.max(40,(x2-x1)/2);
+    const d=Math.abs(A.x-B.x)<10?`M${x1},${y1} L${x2},${y2}`:`M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;
+    paths[a+">"+b]={el:el("path",{d,class:"edge"},eg),from:a,to:b,lane,acc:0};
+  });
+  G.nodes.forEach(n=>{
+    const g=el("g",{class:"node",transform:`translate(${n.x-W/2},${n.y-H/2})`,tabindex:"0",role:"button","aria-label":n.label},ng);
+    el("rect",{class:"box",width:W,height:H,rx:10},g);
+    el("rect",{class:"bar",width:5,height:H-16,x:8,y:8,rx:2.5,fill:`var(${KIND[n.kind]})`},g);
+    const t=el("text",{class:"title",x:20,y:21},g);t.textContent=n.label;
+    const s=el("text",{class:"sub",x:20,y:39},g);s.textContent=n.sub;
+    const m=el("text",{class:"metric",x:20,y:59},g);m.textContent="—";
+    const d=el("circle",{cx:W-14,cy:14,r:5,fill:"var(--idle)"},g);
+    g.addEventListener("click",()=>openCode(n));
+    g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openCode(n)}});
+    nodeEls[n.id]={g,m,d};
+  });
+  connect();
+  requestAnimationFrame(tick);
+}
+
+function connect(){
+  const es=new EventSource("api/stream");
+  es.onmessage=ev=>{S=JSON.parse(ev.data);render();addEvents(S.events||[])};
+  es.onerror=()=>{$("k-txt").textContent="الخادم غير متصل";$("k-dot").className="dot bad"};
+}
+
+function setNode(id,state,text){
+  const n=nodeEls[id]; if(!n)return;
+  n.g.setAttribute("class","node "+(state||""));
+  n.m.textContent=text;
+  n.d.setAttribute("fill",state==="active"||state==="done"?"var(--on)":state==="running"||state==="lagging"?"var(--warn)":state==="failed"?"var(--bad)":"var(--idle)");
+}
+
+function render(){
+  const N=S.nodes, k=S.kafka.ok;
+  $("k-dot").className="dot "+(k?"on":"bad"); $("k-txt").textContent=k?"Kafka متصل":"Kafka غير متصل";
+  const lt=N.live_trips;
+  $("l-dot").className="dot "+(lt.active?"on":""); $("l-txt").textContent="live_trips "+(lt.active?(lt.mode==="file"?"(بدون Kafka)":"يعمل"):"متوقف");
+  $("b-dot").className="dot "+(S.batch.running?"warn":S.batch.ok===false?"bad":S.batch.ok?"on":"");
+  $("b-txt").textContent="Dagster "+(S.batch.running?"يعمل…":S.batch.ok===false?"فشل":S.batch.ok?"اكتمل":"");
+  const r=N.replay;
+  setNode("replay",r.active?"active":"",r.active?`${fmt(r.sent)} / ${fmt(r.total)} · ${Math.round(r.rate)}/s`:(r.sent?`أُرسلت ${fmt(r.sent)}`:"متوقف"));
+  const fb=lt.active&&lt.mode==="file";
+  setNode("positions",k?(N.positions.rate>0?"active":""):(fb?"":"failed"),k?`${fmt(N.positions.offset)} رسالة · ${Math.round(N.positions.rate)}/s`:(fb?"متجاوَز: من الملف":"غير متصل"));
+  const lag=lt.lag;
+  setNode("live_trips",lt.active?(lag>500?"lagging":"active"):(lag>0?"lagging":""),
+    lt.active?`${fmt(lt.processed)} نقطة · ${fmt(lt.trips)} ر`+(lag!=null?` · تأخر ${fmt(lag)}`:""):(lag?`متوقف · تأخر ${fmt(lag)}`:"متوقف"));
+  setNode("trip_events",k&&N.trip_events.offset?"active":"",k?`${fmt(N.trip_events.offset)} حدث`:"—");
+  setNode("live_board",lt.trips?"active":"",`${fmt(lt.trips||0)} نصف رحلة`);
+  setNode("lake_sink",N.lake_sink.active?(N.lake_sink.lag>20000?"lagging":"active"):"",N.lake_sink.active?`${fmt(N.lake_sink.written)} مكتوبة`+(N.lake_sink.lag!=null?` · تأخر ${fmt(N.lake_sink.lag)}`:""):"متوقف");
+  setNode("lake",N.lake.rows?"active":"",N.lake.rows?`${fmt(N.lake.rows)} موقع · ${N.lake.files} ملف`:"فارغ لهذا اليوم");
+  const cr=N.cloudroutes;
+  setNode("cloudroutes",cr.api?"active":"",cr.api?"API متصل":"ملف محفوظ (inbox)");
+  const asset=(id,label)=>{const a=N[id];const st=a.step||(a.exists?"done":"");setNode(id,st,a.step==="running"?"يعمل…":a.exists?`${fmt(a.rows)} ${label}`:"لم يُحسب بعد")};
+  asset("raw_positions","موقع");asset("road_papers","رحلة");asset("route_fit","جهاز×خط");asset("gps_trips","مقطع");
+  asset("device_identity","حافلة");asset("trip_verification","رحلة");asset("km_report","جهاز");asset("bus_day_report","حافلة");
+  const pg=N.postgres;
+  setNode("postgres",pg.step||(pg.ok?"done":pg.configured?"failed":""),pg.step==="running"?"يكتب…":pg.configured?(pg.ok?`${fmt(pg.rows)} صف لليوم`:"غير متصل"):"غير مضبوط");
+  // results
+  $("res-day").textContent=S.day;
+  const R=S.results, kp=$("kpis");
+  if(R){
+    const st=R.status, conf=(st.ok||0)+(st.ok_dep||0), ver=R.declared-(st.nogps||0);
+    kp.innerHTML=[[fmt(R.declared),"رحلة مصرّح بها"],[ver?Math.round(100*conf/ver)+"%":"—","مؤكدة بـGPS"],[fmt(st.diff||0),"الوقت مختلف"],
+      [fmt(st.missing||0),"غير موجودة"],[fmt(R.total_km),"كم"],[(R.commercial_pct??"—")+"%","تجاري"]]
+      .map(([v,l])=>`<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+  } else kp.innerHTML='<p class="empty">لم يُشغَّل الـbatch لهذا اليوم بعد.</p>';
+  const ch=S.batch.checks, names={all_devices_fetched:"كل الأجهزة جُلبت",one_bus_per_device:"جهاز واحد لكل حافلة",every_declared_trip_checked:"كل رحلة مصرّح بها فُحصت",km_categories_add_up:"فئات الكيلومترات تساوي الكلي"};
+  $("checks").innerHTML=Object.keys(ch).length?Object.entries(ch).map(([n,c])=>`<li><span class="dot ${c.passed?"on":"bad"}"></span>${names[n]||n} <code>${n}</code></li>`).join(""):"";
+}
+
+function addEvents(evs){
+  if(!evs.length)return;
+  const feed=$("feed"); if(feed.querySelector(".empty"))feed.innerHTML="";
+  evs.forEach(e=>{
+    if(e.event==="loop")return;
+    const li=document.createElement("li"); li.className="new";
+    const exc=e.event==="excursion";
+    li.innerHTML=`<span class="bus">${e.bus}</span><span class="route ${exc?"exc":""}">${exc?"خارج المسار":(e.from+" ← "+e.to)}</span><span class="time">${e.dep}–${e.arr} · ${e.minutes}′</span>`;
+    feed.prepend(li); if(e.event==="trip")tripsSeen++;
+    spawn("live_trips>trip_events",3); spawn("trip_events>live_board",3);
+  });
+  while(feed.children.length>40)feed.lastChild.remove();
+  $("feed-count").textContent=`${fmt(S&&S.nodes.live_trips.trips||tripsSeen)} نصف رحلة`;
+}
+
+// ---- moving particles: their density follows the real message rate
+function spawn(key,n){const p=paths[key];if(!p)return;for(let i=0;i<n;i++)parts.push({p,t:-i*0.08,c:el("circle",{r:3.2,class:"particle"+(p.lane==="batch"?" batch":"")},$("particles"))})}
+let last=performance.now();
+function tick(now){
+  const dt=Math.min(0.1,(now-last)/1000); last=now;
+  if(S){
+    const N=S.nodes;
+    const rate={ "replay>positions":N.replay.active?N.replay.rate:0, "positions>live_trips":N.live_trips.active?N.live_trips.rate:0,
+      "positions>lake_sink":N.lake_sink.active?Math.max(N.lake_sink.rate,N.positions.rate):0, "lake_sink>lake":N.lake_sink.rate };
+    for(const key in paths){
+      const p=paths[key]; let r=rate[key]||0;
+      if(p.lane==="batch"){const st=(N[p.to]||{}).step; r=st==="running"?40:0}
+      const hot=r>0; p.el.setAttribute("class","edge"+(hot?" hot":""));
+      if(!hot)continue;
+      p.acc+=dt*Math.min(6,0.8+Math.log2(1+r)/2);
+      while(p.acc>=1){p.acc-=1;spawn(key,1)}
+    }
+  }
+  parts=parts.filter(q=>{
+    q.t+=dt*0.9; if(q.t<0)return true;
+    if(q.t>=1){q.c.remove();return false}
+    const L=q.p.el.getTotalLength(), pt=q.p.el.getPointAtLength(q.t*L);
+    q.c.setAttribute("cx",pt.x);q.c.setAttribute("cy",pt.y);return true;
+  });
+  requestAnimationFrame(tick);
+}
+
+// ---- controls
+document.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
+  const a=b.dataset.a, q=new URLSearchParams({speed:$("speed").value}); if(a==="batch"&&S)q.set("day",S.day);
+  $("msg").className="msg"; $("msg").textContent="…";
+  try{
+    const r=await fetch(`api/control/${a}?${q}`,{method:"POST",headers:{"X-Admin-Token":$("token").value}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.detail||r.status);
+    $("msg").textContent=b.textContent.trim()+" ✓";
+    if(a==="reset"){$("feed").innerHTML='<li class="empty">بداية نظيفة. شغّل live_trips ثم الإعادة.</li>';tripsSeen=0}
+  }catch(e){$("msg").className="msg err";$("msg").textContent="مرفوض: "+e.message}
+}));
+
+// ---- code drawer
+async function openCode(n){
+  const d=$("dlg"); $("dlg-title").textContent=n.label; $("dlg-tabs").innerHTML=""; $("dlg-code").textContent="…";
+  d.showModal();
+  try{
+    const files=await (await fetch("api/code/"+n.id)).json();
+    const show=f=>{
+      $("dlg-tabs").querySelectorAll("button").forEach(x=>x.setAttribute("aria-selected",x.dataset.k===f.file+f.function));
+      $("dlg-code").innerHTML=f.source.split("\n").map((l,i)=>`<span class="ln">${f.line+i}</span>${l.replace(/&/g,"&amp;").replace(/</g,"&lt;")}`).join("\n");
+    };
+    files.forEach((f,i)=>{const b=document.createElement("button");b.type="button";b.role="tab";b.dir="ltr";b.dataset.k=f.file+f.function;
+      b.textContent=f.file+(f.function?" · "+f.function+"()":"");b.onclick=()=>show(f);$("dlg-tabs").appendChild(b);if(i===0)show(f)});
+  }catch(e){$("dlg-code").textContent="لا كود لهذه العقدة"}
+}
+$("dlg-close").onclick=()=>$("dlg").close();
+
+init();
+})();
+</script>
+</body>
+</html>

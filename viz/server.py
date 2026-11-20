@@ -1,0 +1,411 @@
+"""The visual pipeline: one web page that shows every node of the system and what it
+is doing right now, read from the real system (heartbeats of the stream apps,
+Kafka offsets and lag, Dagster outputs in the warehouse, PostgreSQL).
+
+    uvicorn viz.server:app --host 0.0.0.0 --port 8000
+
+Controls (start a replay, stop the stream processor to show lag, run the daily
+batch) need the header X-Admin-Token = VIZ_ADMIN_TOKEN. Without that variable,
+controls are accepted only from the same machine.
+"""
+from __future__ import annotations
+
+import ast
+import asyncio
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
+from pathlib import Path
+
+import polars as pl
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from stream.common import DATA, POSITIONS, TRIP_EVENTS  # noqa: E402
+from viz import kafka_metrics  # noqa: E402
+from viz.graph import NODES, EDGES  # noqa: E402
+
+STATE = DATA / "state"
+WH = DATA / "warehouse"
+DAY = os.environ.get("VIZ_DAY", "2026-11-19")
+DEMO_FILE = os.environ.get("VIZ_DEMO_FILE", str(DATA / "inbox" / f"positions_{DAY}.csv.gz"))
+DEMO_FROM = os.environ.get("VIZ_DEMO_FROM", "05:30")
+ANON = os.environ.get("VIZ_ANONYMIZE", "1") == "1"
+ADMIN = os.environ.get("VIZ_ADMIN_TOKEN")
+PY = sys.executable
+
+app = FastAPI(title="fleet-verify pipeline")
+
+
+# ---------------- anonymisation ----------------
+
+def _letters(n: int) -> str:
+    s = ""
+    n += 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _bus_alias() -> dict[str, str]:
+    try:
+        from sources import cloudroutes
+        buses = sorted({str(b["bus"]) for b in cloudroutes.registry()})
+    except Exception:
+        buses = []
+    return {b: f"حافلة {_letters(i)}" for i, b in enumerate(buses)}
+
+
+ALIAS = _bus_alias()
+show_bus = (lambda b: ALIAS.get(str(b), "حافلة ?")) if ANON else (lambda b: f"حافلة {b}")
+
+
+# ---------------- processes the page can start and stop ----------------
+
+class Procs:
+    def __init__(self):
+        self.p: dict[str, subprocess.Popen] = {}
+        self.group = os.environ.get("LIVE_GROUP", "live-trips")
+
+    def running(self, name: str) -> bool:
+        p = self.p.get(name)
+        return p is not None and p.poll() is None
+
+    def start(self, name: str, args: list[str], env: dict | None = None):
+        if self.running(name):
+            return
+        log = (STATE / f"{name}.log").open("ab")
+        self.p[name] = subprocess.Popen([PY, "-m", *args], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                                        env={**os.environ, **(env or {})})
+
+    def stop(self, name: str):
+        p = self.p.get(name)
+        if p is not None and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+
+
+PROCS = Procs()
+
+
+# ---------------- the daily batch, run as a Dagster job ----------------
+
+class Batch:
+    STEP = re.compile(r" - (\w+) - (STEP_START|STEP_SUCCESS|STEP_FAILURE) - ")
+    CHECK = re.compile(r"Asset check '(\w+)' on '(\w+)' (passed|failed)")
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.reset()
+
+    def reset(self):
+        self.running, self.day, self.started, self.finished = False, None, None, None
+        self.steps, self.checks, self.ok, self.log = {}, {}, None, deque(maxlen=40)
+
+    def run(self, day: str):
+        with self.lock:
+            if self.running:
+                return
+            self.reset()
+            self.running, self.day, self.started = True, day, time.time()
+        threading.Thread(target=self._run, args=(day,), daemon=True).start()
+
+    def _exec(self, args: list[str]) -> int:
+        env = {**os.environ, "DAGSTER_HOME": os.environ.get("DAGSTER_HOME", str(ROOT / ".dagster"))}
+        Path(env["DAGSTER_HOME"]).mkdir(parents=True, exist_ok=True)
+        p = subprocess.Popen(["dagster", *args, "-m", "pipeline.definitions"], cwd=ROOT, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in p.stdout:
+            if m := self.STEP.search(line):
+                self.steps[m.group(1)] = {"STEP_START": "running", "STEP_SUCCESS": "done", "STEP_FAILURE": "failed"}[m.group(2)]
+            if m := self.CHECK.search(line):
+                self.checks[m.group(1)] = {"asset": m.group(2), "passed": m.group(3) == "passed"}
+            if "ERROR" in line or "RUN_" in line:
+                self.log.append(line.strip()[-300:])
+        return p.wait()
+
+    def _run(self, day: str):
+        try:
+            if not (WH / "lines" / "all.parquet").exists():
+                self._exec(["asset", "materialize", "--select", "lines,fleet_registry,traccar_devices"])
+            code = self._exec(["job", "execute", "-j", "daily_verification", "--tags", json.dumps({"dagster/partition": day})])
+            self.ok = code == 0
+        finally:
+            self.running, self.finished = False, time.time()
+
+
+BATCH = Batch()
+
+
+# ---------------- reading the system ----------------
+
+def _hb(name: str) -> dict | None:
+    f = STATE / f"{name}.json"
+    try:
+        return json.loads(f.read_text())
+    except Exception:
+        return None
+
+
+def _alive(hb: dict | None, within: float = 5) -> bool:
+    return bool(hb) and not hb.get("stopped") and time.time() - hb.get("updated", 0) < within
+
+
+def _asset(name: str, day: str) -> dict:
+    f = WH / name / (f"{day}.parquet" if name not in ("lines", "fleet_registry", "traccar_devices") else "all.parquet")
+    if not f.exists():
+        return {"exists": False}
+    try:
+        rows = pl.scan_parquet(f).select(pl.len()).collect().item()
+    except Exception:
+        rows = None
+    return {"exists": True, "rows": rows, "mtime": f.stat().st_mtime}
+
+
+def _lake(day: str) -> dict:
+    d = DATA / "lake" / "positions" / f"date={day}"
+    files = list(d.glob("*.parquet")) if d.exists() else []
+    rows = pl.scan_parquet([str(x) for x in files]).select(pl.len()).collect().item() if files else 0
+    return {"files": len(files), "rows": rows}
+
+
+_results_cache: dict = {}
+
+
+def _results(day: str) -> dict | None:
+    f = WH / "trip_verification" / f"{day}.parquet"
+    if not f.exists():
+        return None
+    key = (day, f.stat().st_mtime)
+    if _results_cache.get("key") == key:
+        return _results_cache["val"]
+    v = pl.read_parquet(f)
+    c = dict(v.group_by("status").len().iter_rows())
+    km_f = WH / "km_report" / f"{day}.parquet"
+    km = pl.read_parquet(km_f) if km_f.exists() else None
+    ident_f = WH / "device_identity" / f"{day}.parquet"
+    ident = pl.read_parquet(ident_f) if ident_f.exists() else None
+    val = {
+        "declared": int(v["paper_id"].is_not_null().sum()),
+        "status": {k: int(x) for k, x in c.items()},
+        "total_km": round(float(km["total_km"].sum()), 1) if km is not None else None,
+        "commercial_pct": round(100 * float(km["commercial_km"].sum()) / float(km["total_km"].sum())) if km is not None else None,
+        "identity": dict(ident.group_by("verdict").len().iter_rows()) if ident is not None else {},
+    }
+    _results_cache.update(key=key, val=val)
+    return val
+
+
+_pg_cache = {"t": 0, "val": None}
+
+
+def _postgres(day: str):
+    url = os.environ.get("POSTGRES_URL")
+    if not url:
+        return {"configured": False}
+    if time.time() - _pg_cache["t"] < 5:
+        return _pg_cache["val"]
+    try:
+        import psycopg2
+        with psycopg2.connect(url, connect_timeout=2) as conn, conn.cursor() as cur:
+            cur.execute("select count(*) from trip_verification where work_date = %s", (day,))
+            val = {"configured": True, "ok": True, "rows": cur.fetchone()[0]}
+    except Exception as e:
+        val = {"configured": True, "ok": False, "error": str(e)[:120]}
+    _pg_cache.update(t=time.time(), val=val)
+    return val
+
+
+class Rates:
+    """messages per second from successive counter readings"""
+    def __init__(self):
+        self.prev: dict[str, tuple[float, float]] = {}
+
+    def rate(self, key: str, value) -> float:
+        now = time.time()
+        if value is None:
+            return 0.0
+        old = self.prev.get(key)
+        self.prev[key] = (now, value)
+        if not old or now - old[0] <= 0:
+            return 0.0
+        return max(0.0, (value - old[1]) / (now - old[0]))
+
+
+RATES = Rates()
+
+
+def snapshot() -> dict:
+    day = BATCH.day or DAY
+    k = kafka_metrics.read([POSITIONS, TRIP_EVENTS], [PROCS.group, "lake-sink"])
+    rp, lt, ls = _hb("replay"), _hb("live_trips"), _hb("lake_sink")
+    tp, pp = _hb("traccar_poll"), _hb("papers_poll")
+    pos_end = k["topics"].get(POSITIONS) if k["ok"] else None
+    ev_end = k["topics"].get(TRIP_EVENTS) if k["ok"] else None
+    n = {}
+    n["replay"] = {"active": _alive(rp), "sent": (rp or {}).get("sent"), "total": (rp or {}).get("total"),
+                   "data_time": (rp or {}).get("data_time"), "rate": RATES.rate("replay", (rp or {}).get("sent"))}
+    n["traccar"] = {"active": _alive(tp, 30), "total": (tp or {}).get("total")}
+    n["positions"] = {"kafka": k["ok"], "offset": pos_end, "rate": RATES.rate("positions", pos_end)}
+    n["live_trips"] = {"active": _alive(lt), "mode": (lt or {}).get("mode"), "processed": (lt or {}).get("processed"),
+                       "trips": (lt or {}).get("trips"), "data_time": (lt or {}).get("data_time"),
+                       "lag": k["lag"].get(PROCS.group) if k["ok"] else None,
+                       "rate": RATES.rate("live", (lt or {}).get("processed"))}
+    n["trip_events"] = {"kafka": k["ok"], "offset": ev_end, "trips": (lt or {}).get("trips")}
+    n["live_board"] = {"trips": (lt or {}).get("trips")}
+    n["lake_sink"] = {"active": _alive(ls), "written": (ls or {}).get("written"),
+                      "lag": k["lag"].get("lake-sink") if k["ok"] else None,
+                      "rate": RATES.rate("lake", (ls or {}).get("written"))}
+    n["lake"] = _lake(day)
+    n["cloudroutes"] = {"api": bool(os.environ.get("CLOUDROUTES_TENANT_URL") and os.environ.get("CLOUDROUTES_DATA_TOKEN")),
+                        "poll_active": _alive(pp, 300), "total": (pp or {}).get("total")}
+    for a in ["raw_positions", "road_papers", "route_fit", "gps_trips", "device_identity", "trip_verification",
+              "km_report", "bus_day_report"]:
+        n[a] = {**_asset(a, day), "step": BATCH.steps.get(a)}
+    n["postgres"] = {**_postgres(day), "step": BATCH.steps.get("postgres_export")}
+    return {
+        "t": time.time(), "day": day, "kafka": {"ok": k["ok"], "error": k.get("error")},
+        "nodes": n,
+        "procs": {x: PROCS.running(x) for x in ["replay", "live_trips", "live_fallback", "lake_sink"]},
+        "batch": {"running": BATCH.running, "day": BATCH.day, "ok": BATCH.ok, "steps": BATCH.steps,
+                  "checks": BATCH.checks, "started": BATCH.started, "finished": BATCH.finished, "log": list(BATCH.log)[-5:]},
+        "results": _results(day),
+        "anonymized": ANON,
+    }
+
+
+def _events_since(pos: int) -> tuple[list[dict], int]:
+    f = STATE / "trip-events.jsonl"
+    if not f.exists():
+        return [], 0
+    size = f.stat().st_size
+    if pos > size:          # file was reset
+        pos = 0
+    if pos == size:
+        return [], pos
+    with f.open("rb") as fh:
+        fh.seek(pos)
+        chunk = fh.read(size - pos)
+    lines = chunk.split(b"\n")
+    tail = lines.pop()               # an incomplete last line waits for the next read
+    out = []
+    for raw in lines:
+        try:
+            e = json.loads(raw)
+        except Exception:
+            continue
+        out.append({"bus": show_bus(e.get("bus")), "event": e["event"], "line": e.get("line"),
+                    "dep": e.get("dep_time"), "arr": e.get("arr_time"), "from": e.get("from_name"),
+                    "to": e.get("to_name"), "minutes": e.get("minutes")})
+    return out[-60:], size - len(tail)
+
+
+# ---------------- HTTP ----------------
+
+def _admin(request: Request):
+    if ADMIN:
+        if not secrets.compare_digest(request.headers.get("x-admin-token", ""), ADMIN):
+            raise HTTPException(403, "admin token required")
+    elif request.client and request.client.host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(403, "set VIZ_ADMIN_TOKEN to allow controls from other machines")
+
+
+@app.get("/")
+def index():
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
+@app.get("/api/graph")
+def graph():
+    return {"nodes": NODES, "edges": EDGES, "day": DAY, "controls": True}
+
+
+@app.get("/api/state")
+def state():
+    return snapshot()
+
+
+@app.get("/api/stream")
+async def stream(request: Request):
+    async def gen():
+        _, pos = _events_since(0)
+        pos = max(0, pos)
+        first = True
+        while not await request.is_disconnected():
+            snap = await asyncio.to_thread(snapshot)
+            events, pos = await asyncio.to_thread(_events_since, pos)
+            if first:
+                f = STATE / "trip-events.jsonl"
+                events = _events_since(0)[0][-15:] if f.exists() else []
+                first = False
+            snap["events"] = events
+            yield f"data: {json.dumps(snap, ensure_ascii=False, default=str)}\n\n"
+            await asyncio.sleep(1)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/code/{node}")
+def code(node: str):
+    meta = next((x for x in NODES if x["id"] == node), None)
+    if not meta or not meta.get("code"):
+        raise HTTPException(404, "no code for this node")
+    out = []
+    for ref in meta["code"]:
+        path, _, func = ref.partition(":")
+        src = (ROOT / path).read_text(encoding="utf-8")
+        if func:
+            tree = ast.parse(src)
+            fn = next((n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name == func), None)
+            seg = ast.get_source_segment(src, fn) if fn else None
+            start = fn.lineno if fn else 1
+            out.append({"file": path, "function": func, "line": start, "source": seg or src})
+        else:
+            out.append({"file": path, "function": None, "line": 1, "source": src})
+    return out
+
+
+@app.post("/api/control/{action}")
+def control(action: str, request: Request, speed: float = 120, day: str | None = None):
+    _admin(request)
+    STATE.mkdir(parents=True, exist_ok=True)
+    if action == "replay":
+        PROCS.start("replay", ["stream.replay", DEMO_FILE, "--speed", str(speed), "--from", DEMO_FROM])
+    elif action == "stop-replay":
+        PROCS.stop("replay")
+    elif action == "start-live":
+        PROCS.start("live_trips", ["stream.live_trips"], {"LIVE_GROUP": PROCS.group, "LIVE_OFFSET_RESET": "latest"})
+    elif action == "stop-live":                     # the lag demo: positions keep arriving, nobody reads them
+        PROCS.stop("live_trips")
+    elif action == "start-lake":
+        PROCS.start("lake_sink", ["stream.lake_sink"])
+    elif action == "stop-lake":
+        PROCS.stop("lake_sink")
+    elif action == "fallback":                      # no Kafka: same logic straight from the file
+        PROCS.start("live_fallback", ["stream.live_trips", "--file", DEMO_FILE, "--speed", str(speed), "--from", DEMO_FROM])
+    elif action == "stop-fallback":
+        PROCS.stop("live_fallback")
+    elif action == "reset":                         # a clean live demo: new consumer group, empty event feed
+        for name in ["replay", "live_trips", "live_fallback"]:
+            PROCS.stop(name)
+        PROCS.group = f"live-trips-{int(time.time())}"
+        for f in ["trip-events.jsonl", "replay.json", "live_trips.json"]:
+            (STATE / f).unlink(missing_ok=True)
+    elif action == "batch":
+        BATCH.run(day or DAY)
+    else:
+        raise HTTPException(404, "unknown action")
+    return {"ok": True, "procs": {x: PROCS.running(x) for x in ["replay", "live_trips", "live_fallback", "lake_sink"]},
+            "group": PROCS.group}

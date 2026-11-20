@@ -1,0 +1,16 @@
+{
+  "_note": "Thresholds used by every step. Changing one changes results, so the pipeline stores a hash of this file with each output.",
+  "timezone": "Africa/Algiers",
+  "plane": {"lat0": 35.715, "lon0": 4.52},
+  "service_hours": [5, 21],
+  "terminal_radius_m": 50,
+  "on_route_m": 80,
+  "terminal_progress": [0.03, 0.95],
+  "episode_gap_s": 900,
+  "trip_min_span": 0.7,
+  "excursion_off_share": 0.5,
+  "route_fit": {"moving_kmh": 8, "thin_s": 20, "near_m": 60, "bin_m": 100, "min_f": 0.5},
+  "max_speed_kmh": 120,
+  "match": {"max_cost_min": 90, "dep_ok_min": 10, "arr_ok_min": 12, "short_trip_min": 16, "near_dep_min": 45},
+  "identity": {"trip_tol_min": 10, "confirm": 0.5, "alt_min": 0.6, "alt_margin": 0.3, "unique_margin": 0.2, "off_network_max_f": 0.1}
+}

@@ -1,0 +1,10 @@
+.dagster/
+data/state/
+.env
+__pycache__/
+.pytest_cache/
+data/warehouse/
+data/lake/
+.git/
+.venv/
+*:Zone.Identifier

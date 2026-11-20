@@ -1,0 +1,85 @@
+# Everything on one VPS:  docker compose -f docker-compose.vps.yml up -d --build
+# Public:   https://pipeline.$DOMAIN  (the visual pipeline; controls need VIZ_ADMIN_TOKEN)
+# Private:  https://dagster.$DOMAIN and https://kafka.$DOMAIN behind basic auth
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    KAFKA_BROKER: kafka:29092
+    POSTGRES_URL: postgresql://fleet:${POSTGRES_PASSWORD}@postgres:5432/fleet
+    DAGSTER_HOME: /app/.dagster
+  volumes:
+    - fleet-data:/app/data
+    - dagster-home:/app/.dagster
+  restart: unless-stopped
+  depends_on: [kafka, postgres]
+
+services:
+  kafka:
+    image: apache/kafka:3.8.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes: [kafka-data:/var/lib/kafka/data]     # no port published: reachable only inside the compose network
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.1.0
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: fleet
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on: [kafka]
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: fleet
+    volumes: [pg-data:/var/lib/postgresql/data]
+
+  viz:                      # the visual pipeline; it can start replay / live_trips / batch for demos
+    <<: *app
+    command: uvicorn viz.server:app --host 0.0.0.0 --port 8000
+
+  lake-sink:                # always on: every position goes to the lake for the daily run
+    <<: *app
+    command: python -m stream.lake_sink
+
+  dagster-web:
+    <<: *app
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -m pipeline.definitions
+
+  dagster-daemon:           # runs the 02:30 schedule
+    <<: *app
+    command: dagster-daemon run -m pipeline.definitions
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    env_file: .env
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [viz, dagster-web, kafka-ui]
+
+volumes:
+  kafka-data:
+  pg-data:
+  fleet-data:
+  dagster-home:
+  caddy-data:
