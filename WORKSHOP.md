@@ -30,7 +30,7 @@
 
 ```bash
 python -m tools.reset_demo --kafka                                        # على الحاسوب
-docker compose -f docker-compose.vps.yml exec viz python -m tools.reset_demo --kafka   # على الـVPS
+./run-vps.sh reset                                                        # على الـVPS
 ```
 
 | يبقى | يُمسح |

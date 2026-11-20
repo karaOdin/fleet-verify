@@ -1,15 +1,28 @@
-# Everything on one VPS:  docker compose -f docker-compose.vps.yml up -d --build
-# Public:   https://pipeline.$DOMAIN  (the visual pipeline; controls need VIZ_ADMIN_TOKEN)
-# Private:  https://dagster.$DOMAIN and https://kafka.$DOMAIN behind basic auth
+# The whole stack on the shared VPS (Ploi, nginx on 80/443 for other sites):  ./run-vps.sh up
+#
+# Every published port binds to 127.0.0.1 only. Docker-published ports bypass ufw, so nothing may bind 0.0.0.0.
+#   viz          127.0.0.1:8000   public through the host's nginx (pipeline.devcloud.dz, see deploy/DEPLOY.md)
+#   dagster-web  127.0.0.1:3001   on demand only (./run-vps.sh dagster start|stop), through an SSH tunnel
+#   Kafka and PostgreSQL publish no ports: reachable only inside the compose network.
+#
+# Memory: a mem_limit on every container (memswap_limit equal, so the limit is RAM and not swap). The always-on
+# containers add up to 2,140 MiB, under the 2.2 GiB budget; the batch runs inside viz, so a batch cannot raise
+# the total. dagster-web (512 MiB) is extra and only runs when asked for.
+# No kafka-ui, no dagster-daemon, no Superset on this server (3.8 GiB, shared).
+name: fleet
+
 x-app: &app
   build: .
+  image: fleet-app:latest
   env_file: .env
   environment:
     KAFKA_BROKER: kafka:29092
     POSTGRES_URL: postgresql://fleet:${POSTGRES_PASSWORD}@postgres:5432/fleet
     DAGSTER_HOME: /app/.dagster
+    CLOUDROUTES_URL: ""                       # lines and the fleet registry come from data/inbox
   volumes:
     - fleet-data:/app/data
+    - ./data/inbox:/app/data/inbox:ro         # the real inputs, always the repository's copy
     - dagster-home:/app/.dagster
   restart: unless-stopped
   depends_on: [kafka, postgres]
@@ -17,8 +30,12 @@ x-app: &app
 services:
   kafka:
     image: apache/kafka:3.8.0
+    container_name: fleet-kafka
     restart: unless-stopped
+    mem_limit: 640m
+    memswap_limit: 640m
     environment:
+      KAFKA_HEAP_OPTS: "-Xmx384m -Xms384m"
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:9093
@@ -33,54 +50,47 @@ services:
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_LOG_DIRS: /var/lib/kafka/data   # on the volume (the image default is /tmp/kafka-logs, lost with the container)
       KAFKA_LOG_RETENTION_HOURS: 168
-    volumes: [kafka-data:/var/lib/kafka/data]     # no port published: reachable only inside the compose network
-
-  kafka-ui:
-    image: ghcr.io/kafbat/kafka-ui:v1.1.0
-    restart: unless-stopped
-    environment:
-      KAFKA_CLUSTERS_0_NAME: fleet
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-    depends_on: [kafka]
+    volumes: [kafka-data:/var/lib/kafka/data]     # no port published
 
   postgres:
     image: postgis/postgis:16-3.4
+    container_name: fleet-postgres
     restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 192m
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20"]
     environment:
       POSTGRES_USER: fleet
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: fleet
-    volumes: [pg-data:/var/lib/postgresql/data]
+    volumes: [pg-data:/var/lib/postgresql/data]   # no port published
 
-  viz:                      # the visual pipeline; it can start replay / live_trips / batch for demos
+  viz:                      # the visual pipeline; it starts replay / live_trips / the batch (Dagster CLI) for demos
     <<: *app
-    command: uvicorn viz.server:app --host 0.0.0.0 --port 8000
+    container_name: fleet-viz
+    mem_limit: 1052m
+    memswap_limit: 1052m
+    ports: ["127.0.0.1:8000:8000"]
+    command: uvicorn viz.server:app --host 0.0.0.0 --port 8000    # inside the container; published on 127.0.0.1 only
 
   lake-sink:                # always on: every position goes to the lake for the daily run
     <<: *app
+    container_name: fleet-lake-sink
+    mem_limit: 256m
+    memswap_limit: 256m
     command: python -m stream.lake_sink
 
-  dagster-web:
+  dagster-web:              # on demand: ./run-vps.sh dagster start|stop
     <<: *app
+    container_name: fleet-dagster-web
+    profiles: [dagster]
+    mem_limit: 512m
+    memswap_limit: 512m
+    ports: ["127.0.0.1:3001:3000"]
     command: dagster-webserver -h 0.0.0.0 -p 3000 -m pipeline.definitions
-
-  dagster-daemon:           # runs the 02:30 schedule
-    <<: *app
-    command: dagster-daemon run -m pipeline.definitions
-
-  caddy:
-    image: caddy:2.8
-    restart: unless-stopped
-    ports: ["80:80", "443:443"]
-    env_file: .env
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-    depends_on: [viz, dagster-web, kafka-ui]
 
 volumes:
   kafka-data:
   pg-data:
   fleet-data:
   dagster-home:
-  caddy-data:

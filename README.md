@@ -154,11 +154,18 @@ Bus numbers are shown as "حافلة A, B, …" while `VIZ_ANONYMIZE=1`.
 
 ## Deploy on a VPS
 
+The shared VPS (Ploi, nginx on 80/443 for other sites) runs `docker-compose.vps.yml`, project `fleet`, containers `fleet-*`:
+
 ```bash
-cp .env.example .env      # DOMAIN, ADMIN_USER, ADMIN_HASH, POSTGRES_PASSWORD, VIZ_ADMIN_TOKEN, tokens
-docker compose -f docker-compose.vps.yml up -d --build
+cp .env.example .env      # POSTGRES_PASSWORD, VIZ_ADMIN_TOKEN, tokens
+./run-vps.sh up           # kafka, postgres, viz (127.0.0.1:8000), lake-sink
+./run-vps.sh stop         # stop everything, data kept
+./run-vps.sh reset        # back to the start of the demo (tools.reset_demo --kafka)
+./run-vps.sh dagster start|stop   # Dagster UI on 127.0.0.1:3001, only while needed
+./run-vps.sh status       # containers, ports, memory
 ```
 
-DNS: `pipeline.`, `dagster.` and `kafka.` records of `$DOMAIN` pointing at the VPS. Caddy gets the
-certificates. The pipeline page is public (controls need the token); Dagster and the Kafka console sit
-behind basic auth. Kafka and PostgreSQL publish no ports.
+Every published port binds to 127.0.0.1 (Docker-published ports bypass ufw); Kafka and PostgreSQL publish none.
+The host's nginx proxies `pipeline.devcloud.dz` to 127.0.0.1:8000; Dagster is reached through an SSH tunnel
+(`deploy/DEPLOY.md`). No kafka-ui, dagster-daemon or Superset on this server: each container has a `mem_limit`,
+and the stack measured 473 MiB idle, 818 MiB during a ×120 replay, 1,011 MiB during the batch (limit 2.2 GiB).
