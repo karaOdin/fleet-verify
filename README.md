@@ -77,6 +77,12 @@ Known places of a line: its terminal zones and its layover places (`config/setti
 of where buses wait between rounds, seeded from 19 Nov).
 
 Nothing counts before the device first reaches a terminal of its line, nor at its overnight parking place.
+Which bus and line each device stands for: live uses the latest resolved identity from the last batch run
+(`device_identity`, what each device really drove), not the registry, as production would. `tools.reset_demo`
+keeps a copy (`data/identity/latest.json`) before it deletes the day's results. The registry alone is wrong for
+some devices: on 19 Nov device 146 is registered on bus 22620, line 12, but drove line 11 all day as H030.
+The overnight parking place is the first position a device sends: a replay from 05:30 learns it later than
+the whole day does, so the stage shows 32 off_route alerts where the whole day has 31 (device 145, 18:48).
 `python -m tools.bench_live --mode file|kafka` measures how many positions per second `live_trips` handles.
 On the VPS (4 vCPU, inside `fleet-viz`): 4,820 positions/s through Kafka; ×120 needs about 740/s at the morning peak.
 `silent` runs on the stream's own clock (latest fix time), one clock per Kafka partition, so a replay behaves

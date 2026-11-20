@@ -12,7 +12,9 @@ Removes only what the demo creates:
     deleted (lake-sink, live-trips*, ...): a group that kept offsets past the end of a recreated topic made
     lake_sink jump back to the beginning. Groups with a running member cannot be deleted, so stop the
     consumers first (./run-vps.sh reset does: it stops lake-sink and restarts viz)
-Keeps: data/inbox (the real inputs), the other days' results, Dagster history.
+Keeps: data/inbox (the real inputs), the other days' results, Dagster history, and the latest resolved
+identity (data/identity/latest.json, saved from the day's device_identity before it is deleted): live uses the
+latest resolved identity from the last batch run, as in production.
 """
 from __future__ import annotations
 
@@ -28,6 +30,24 @@ DAILY_ASSETS = ["raw_positions", "road_papers", "route_fit", "gps_trips", "devic
                 "km_report", "bus_day_report", "postgres_export"]
 PG_TABLES = ["bus_day_report", "trip_verification", "km_report", "device_identity"]
 TOPICS = ["fleet.positions", "fleet.trip-events", "fleet.alerts", "fleet.road-papers", "fleet.paper-checks"]
+
+
+def save_latest_identity(day: str) -> str | None:
+    """Keep the device -> bus/line assignment of the day's identity result before the result is deleted."""
+    import json
+    import polars as pl
+    from stream.common import identity_assignments
+    f = DATA / "warehouse" / "device_identity" / f"{day}.parquet"
+    if not f.exists():
+        return None
+    a = identity_assignments(pl.read_parquet(f))
+    out = DATA / "identity" / "latest.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"from_day": day, "source": f"warehouse/device_identity/{day}.parquet",
+                               "assignments": {str(d): v for d, v in sorted(a.items())}}, indent=1), encoding="utf-8")
+    tmp.replace(out)
+    return f"latest resolved identity kept ({len(a)} devices, from {day}) in {out.relative_to(DATA)}"
 
 
 def reset(day: str, kafka: bool) -> list[str]:
@@ -46,6 +66,9 @@ def reset(day: str, kafka: bool) -> list[str]:
     if lake.exists():
         shutil.rmtree(lake)
         done.append(f"lake for {day} removed")
+    saved = save_latest_identity(day)
+    if saved:
+        done.append(saved)
     n = 0
     for a in DAILY_ASSETS:
         f = DATA / "warehouse" / a / f"{day}.parquet"

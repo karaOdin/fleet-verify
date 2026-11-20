@@ -20,8 +20,22 @@
 1. `docker compose up -d` على الجهاز الذي ستعرض منه، وجرّب الأزرار كلها مرة. مسار Kafka جُرّب (`tests/test_kafka_e2e.py`). السرعة ×120 أو ×300 يلحق بها live_trips؛ ×600 تُظهر التأخر وحدها.
 2. `docker compose pull` مسبقًا: لا تعتمد على إنترنت القاعة.
 3. شغّل الـbatch مرة قبل البدء (يخلق `lines` و`fleet_registry`)، ثم "بداية نظيفة".
+   Live uses the latest resolved identity from the last batch run (`data/identity/latest.json`, kept by the reset).
 4. `.env`: `VIZ_ANONYMIZE=1`، `FLEET_POSITIONS_PREFER=inbox`، `VIZ_ADMIN_TOKEN`.
 5. لا Traccar حي ولا API حي على المسرح: الإعادة فقط. لا أرقام حافلات، لا أرقام مستلمين، لا شيء عن التحقيق.
+
+## Timing at ×120 from 05:30 (measured on the VPS)
+
+The whole replay takes 9 min 17 s (288,900 positions). Off-route alerts appear on the page (real time after pressing replay):
+
+| Bus on the page | Off route since | Appears after |
+|---|---|---|
+| Bus R | 06:24 | 0:35 |
+| Bus O | 06:41 | 0:43 |
+| Bus X | 06:54 | 0:50 |
+| Bus G | 07:04 (opens 07:29) | 1:03 |
+| Bus O | 07:53 | 1:20 |
+| Bus R (22606, school transport) | 14:12 | 4:30 |
 
 ## بعد البروفة: الرجوع إلى نقطة البداية
 

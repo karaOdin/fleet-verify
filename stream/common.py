@@ -26,14 +26,31 @@ def load_lines():
     return build_lines(lines_frame(cloudroutes.lines()), plane())
 
 
+def latest_identity_file() -> Path:
+    """The last batch run's resolved identity, kept by tools.reset_demo."""
+    return DATA / "identity" / "latest.json"
+
+
+def identity_assignments(df: pl.DataFrame) -> dict[int, dict]:
+    """device_id -> {"bus", "line"} from a device_identity result: what each device really drove."""
+    df = df.drop_nulls(["resolved_device_id", "resolved_line"])
+    return {int(r["resolved_device_id"]): {"bus": str(r["bus"]), "line": str(r["resolved_line"])} for r in df.iter_rows(named=True)}
+
+
 def device_assignments() -> dict[int, dict]:
-    """device_id -> {"bus", "line"}. Taken from the most recent daily identity
-    result (what the device really drove); falls back to the registry."""
+    """device_id -> {"bus", "line"}: live uses the latest resolved identity from the last batch run.
+    1. the newest device_identity result in the warehouse;
+    2. else the copy of the last one in data/identity/latest.json (tools.reset_demo saves it before it
+       deletes the day's results, so a demo reset does not send live back to the registry);
+    3. else the fleet registry. The registry can be wrong (on 19 Nov device 146 is registered on 22620,
+       line 12, but drove line 11 all day): measured against the wrong line, a bus looks off route."""
     wh = DATA / "warehouse" / "device_identity"
     files = sorted(wh.glob("*.parquet")) if wh.exists() else []
     if files:
-        df = pl.read_parquet(files[-1]).drop_nulls(["resolved_device_id", "resolved_line"])
-        return {int(r["resolved_device_id"]): {"bus": r["bus"], "line": r["resolved_line"]} for r in df.iter_rows(named=True)}
+        return identity_assignments(pl.read_parquet(files[-1]))
+    if latest_identity_file().exists():
+        saved = json.loads(latest_identity_file().read_text(encoding="utf-8"))
+        return {int(d): v for d, v in saved["assignments"].items()}
     return {int(r["traccar_device_id"]): {"bus": r["bus"], "line": r["line"]}
             for r in cloudroutes.registry() if r.get("traccar_device_id")}
 
