@@ -6,7 +6,7 @@ The old Traccar instance on this host stays stopped.
 
 ```
 browser ──https──▶ nginx (Ploi) ──▶ 127.0.0.1:8000  fleet-viz          pipeline.devcloud.dz (public, controls need the token)
-                                └─▶ 127.0.0.1:3001  fleet-dagster-web  dagster.devcloud.dz (password)
+                                └─▶ 127.0.0.1:3001  fleet-dagster-web  dag-work.devcloud.dz (password)
                    docker network "fleet": fleet-kafka, fleet-postgres, fleet-lake-sink  (no published ports)
 ```
 
@@ -18,7 +18,7 @@ Kafka and PostgreSQL publish no ports at all.
 | Record | Type | Value |
 |---|---|---|
 | `pipeline.devcloud.dz` | A | `95.111.253.252` |
-| `dagster.devcloud.dz` | A | `95.111.253.252` |
+| `dag-work.devcloud.dz` | A | `95.111.253.252` |
 | (optional) both names | AAAA | `2a02:c207:2245:6966::1` (nginx already listens on `[::]:443`) |
 
 Then in Ploi: one site per name, a Let's Encrypt certificate each.
@@ -51,10 +51,10 @@ Checked: page 200; one SSE event per second through the proxy (also with `gzip o
 request without the token 403. The app never trusts the client address: behind nginx every request comes from
 127.0.0.1, so only `X-Admin-Token` opens the controls, and none at all when `VIZ_ADMIN_TOKEN` is unset.
 
-### dagster.devcloud.dz → 127.0.0.1:3001 (password)
+### dag-work.devcloud.dz → 127.0.0.1:3001 (password)
 
 ```nginx
-    # dagster.devcloud.dz -> Dagster web UI (127.0.0.1:3001), behind a password
+    # dag-work.devcloud.dz -> Dagster web UI (127.0.0.1:3001), behind a password
     location / {
         auth_basic           "Dagster";
         auth_basic_user_file /home/ploi/fleet-secrets/dagster.htpasswd;
@@ -109,13 +109,17 @@ topics are recreated empty and every consumer group's offsets are deleted. It ke
 and the latest resolved identity: live uses the latest resolved identity from the last batch run
 (`data/identity/latest.json`), as production would. Run the batch once after a fresh install so that file exists.
 
+Write each value in `.env` on its own line with no comment after it: Docker Compose passes `VAR=   # text` into the
+container as the value `# text`, not as empty (`VIZ_ADMIN_TOKEN` was set that way until 20 Nov). After changing
+`.env`: `docker compose -f docker-compose.vps.yml up -d --force-recreate viz`.
 Secrets: `.env` (mode 600, never printed, never committed) holds `POSTGRES_PASSWORD`, `VIZ_ADMIN_TOKEN` and the API
 tokens. `CLOUDROUTES_URL` stays empty on purpose: lines and the fleet registry come from `data/inbox`; with
 `FLEET_*_PREFER=inbox` no live API is called during the talk.
 
 ## Unlock the controls on the presenting laptop
 
-Open `https://pipeline.devcloud.dz/#admin=<VIZ_ADMIN_TOKEN>` once. The fragment never reaches the server or its logs;
+The token is in `/home/ploi/fleet-secrets/viz-admin-token.txt` (mode 600; the same value as `VIZ_ADMIN_TOKEN` in
+`.env`). Open `https://pipeline.devcloud.dz/#admin=<token>` once. The fragment never reaches the server or its logs;
 the page checks the token with `/api/auth`, keeps it in the browser and removes it from the address bar. The control
 panel then shows. Viewers never see it. `https://pipeline.devcloud.dz/#lock` forgets the token.
 
@@ -140,7 +144,7 @@ With the Dagster UI on during the talk, expect about 1.45 GiB at the peak.
 1. `ssh ploi@95.111.253.252`, `cd ~/fleet-verify && git pull` (if anything changed: `./run-vps.sh build`).
 2. `./run-vps.sh prepare`: five containers up, `127.0.0.1:8000` and `127.0.0.1:3001` only, total memory under 1 GiB.
 3. `curl -sS -o /dev/null -w "%{http_code}\n" https://pipeline.devcloud.dz/` → 200, and
-   `https://dagster.devcloud.dz/` → 401 without the password.
+   `https://dag-work.devcloud.dz/` → 401 without the password.
 4. On the laptop: open `/#admin=<token>`; the control panel shows; the header reads "Kafka connected".
 5. Rehearse once: Clean start → live_trips → Replay ×120: the first alert (Bus R, since 06:24) appears at ~0:35,
    Bus R's 14:12 alert at ~4:30, the replay ends at ~9:17. Pause / resume, then Run the batch (~49 s to four green

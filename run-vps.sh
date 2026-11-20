@@ -34,7 +34,7 @@ case "${1:-}" in
     wait_viz ;;
   prepare)                          # before the talk
     "$0" up
-    "$0" dagster start                # dagster.devcloud.dz (password) during the talk; ~310 MiB more
+    "$0" dagster start                # dag-work.devcloud.dz (password) during the talk; ~310 MiB more
     "$0" reset
     "$0" status ;;
   stop|down)

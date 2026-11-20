@@ -31,7 +31,7 @@
 
 ## On the VPS before the talk
 
-`./run-vps.sh prepare`: starts the stack, starts the Dagster web UI (https://dagster.devcloud.dz, user `fleet`,
+`./run-vps.sh prepare`: starts the stack, starts the Dagster web UI (https://dag-work.devcloud.dz, user `fleet`,
 password in `/home/ploi/fleet-secrets/dagster-password.txt`), resets the demo, prints memory. Open the page once as
 `https://pipeline.devcloud.dz/#admin=<VIZ_ADMIN_TOKEN>` on the presenting laptop. Details: `deploy/DEPLOY.md`.
 
