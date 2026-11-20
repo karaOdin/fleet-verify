@@ -1,5 +1,5 @@
 """The workshop run, clicked in a real browser (headless Chromium):
-Clean start → live_trips ▶ → Replay the day → trips and an alert in the feed → ⏸ (lag rises) → ▶ (lag falls)
+Clean start → live_trips → Replay the day → trips and an alert in the feed → Pause (lag rises) → live_trips (lag falls)
 → Run the batch → the four checks. A screenshot of each step goes to docs/screens/.
 
 Skipped unless the page answers at VIZ_URL (default http://localhost:8000) with Kafka up.
@@ -92,7 +92,7 @@ def test_workshop_run_in_browser():
 
         def click(action: str):
             page.click(f'button[data-a="{action}"]')
-            expect(msg).to_contain_text("✓", timeout=15_000)
+            expect(msg).to_contain_text(": done", timeout=15_000)
 
         page.screenshot(path=str(SHOTS / "01-page.png"), full_page=True)
 

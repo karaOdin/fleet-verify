@@ -35,6 +35,7 @@ from stream.common import ALERTS, DATA, POSITIONS, TRIP_EVENTS  # noqa: E402
 from viz import kafka_metrics  # noqa: E402
 from viz.graph import NODES, EDGES  # noqa: E402
 from fleet.settings import place_en  # noqa: E402
+from viz import samples as SAMPLES  # noqa: E402
 
 STATE = DATA / "state"
 WH = DATA / "warehouse"
@@ -374,7 +375,18 @@ def index():
 
 @app.get("/api/graph")
 def graph(request: Request):
-    return {"nodes": NODES, "edges": EDGES, "day": DAY, "controls": _token_ok(request)}
+    return {"nodes": NODES, "edges": EDGES, "day": DAY, "controls": _token_ok(request), "raw": SAMPLES.NODE_SAMPLES}
+
+
+@app.get("/api/sample/{node}")
+def sample(node: str):
+    """Real raw rows behind a source node, for every viewer (no token): read from data/inbox only,
+    filtered by viz/samples.py (no receiver, no device name, bus anonymised, no Arabic text)."""
+    ids = SAMPLES.NODE_SAMPLES.get(node)
+    if not ids:
+        raise HTTPException(404, "no raw sample for this node")
+    built = SAMPLES.build(show_bus)
+    return [built[i] for i in ids]
 
 
 @app.get("/api/auth")

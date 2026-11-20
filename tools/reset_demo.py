@@ -7,9 +7,12 @@ Removes only what the demo creates:
   - live state: heartbeats, trip events, alerts, paper checks (data/state)
   - the replay's partial lake for that day (data/lake/positions/date=<day>)
   - that day's batch results (data/warehouse/<asset>/<day>.parquet) and its rows in PostgreSQL,
-    so the batch can be run live on stage and the day appears in Superset
-  - with --kafka: the demo topics are deleted and recreated empty
-Keeps: data/inbox (the real inputs), the other days' results (the week in Superset), Dagster history.
+    so the batch can be run live on stage
+  - with --kafka: the demo topics are deleted and recreated empty, and every consumer group's offsets are
+    deleted (lake-sink, live-trips*, ...): a group that kept offsets past the end of a recreated topic made
+    lake_sink jump back to the beginning. Groups with a running member cannot be deleted, so stop the
+    consumers first (./run-vps.sh reset does: it stops lake-sink and restarts viz)
+Keeps: data/inbox (the real inputs), the other days' results, Dagster history.
 """
 from __future__ import annotations
 
@@ -67,6 +70,24 @@ def reset(day: str, kafka: bool) -> list[str]:
             from confluent_kafka.admin import AdminClient, NewTopic
             broker = os.environ.get("KAFKA_BROKER", "localhost:9092")
             admin = AdminClient({"bootstrap.servers": broker})
+            groups = sorted(g.group_id for g in admin.list_consumer_groups(request_timeout=10).result().valid)
+            deleted, kept, end = [], {}, time.monotonic() + 60
+            while groups:
+                for g, f in admin.delete_consumer_groups(groups, request_timeout=10).items():
+                    try:
+                        f.result()
+                        deleted.append(g)
+                        kept.pop(g, None)
+                    except Exception as e:             # a member is still there: a running consumer, or one
+                        kept[g] = str(e)               # killed without closing, until its session times out
+                groups = sorted(kept)
+                if not groups or time.monotonic() > end:
+                    break
+                time.sleep(5)
+            kept = [f"{g} ({e})" for g, e in kept.items()]
+            done.append(f"consumer groups deleted: {', '.join(deleted) or 'none'}")
+            if kept:
+                done.append(f"consumer groups NOT deleted (stop their consumers first): {'; '.join(kept)}")
             existing = set(admin.list_topics(timeout=5).topics)
             # plus the changelog topics Quix Streams keeps for each consumer group's state
             gone = [t for t in existing if t in TOPICS or t.startswith("changelog__live-trips")]
@@ -91,5 +112,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
     for line in reset(args.day, args.kafka):
         print("-", line)
-    print("\nNow: restart the viz page (or press Clean start). The top lane is idle, the bottom lane is grey for",
-          args.day, "and Superset shows the other days.")
+    print("\nNow: restart the viz page (or press Clean start). The top lane is idle and the bottom lane is grey for",
+          args.day + ".")

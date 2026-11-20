@@ -61,6 +61,11 @@ svg#g{display:block;width:100%;min-width:980px;height:auto}
 .panels{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px}
 .panels .ctl{grid-column:1/-1}
 [hidden]{display:none!important}
+/* button icons drawn in CSS: no symbol glyph, so they look the same with any font on any machine */
+.ico{display:inline-block;vertical-align:-.08em;margin-right:.5em;flex:none}
+.ico.play{width:0;height:0;border-style:solid;border-width:.42em 0 .42em .7em;border-color:transparent transparent transparent currentColor}
+.ico.stop{width:.72em;height:.72em;background:currentColor;border-radius:1px}
+.ico.pause{width:.66em;height:.78em;box-sizing:border-box;border-left:.24em solid currentColor;border-right:.24em solid currentColor}
 .ctl-rows{display:flex;flex-wrap:wrap;gap:10px 22px}
 .alerts li{grid-template-columns:auto 1fr auto}
 .alerts li.open{background:color-mix(in srgb,var(--warn) 14%,var(--bg))}
@@ -103,6 +108,8 @@ dialog::backdrop{background:rgb(0 0 0 / .45)}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}
 .tabs button[aria-selected="true"]{background:var(--ink);color:var(--panel)}
 pre.code{margin:0;padding:14px 16px;overflow:auto;max-height:64vh;font-family:var(--f-mono);font-size:12.5px;line-height:1.55;direction:ltr;text-align:left;tab-size:4}
+pre.code.raw{font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.dlg-cap{margin:10px 16px 0;color:var(--muted);font-size:.92rem;line-height:1.45}
 pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2em;text-align:right;margin-right:12px}
 @media (prefers-reduced-motion:reduce){.node.running rect.box{animation:none}.feed li.new{animation:none}}
 </style>
@@ -154,21 +161,21 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
         <select id="speed"><option value="60">×60</option><option value="120" selected>×120</option><option value="300">×300</option><option value="600">×600 (the lag grows by itself)</option></select>
       </div>
       <div class="row">
-        <button class="primary" data-a="replay" type="button">▶ Replay the day into Kafka</button>
-        <button data-a="stop-replay" type="button">■ Stop</button>
+        <button class="primary" data-a="replay" type="button"><i class="ico play" aria-hidden="true"></i>Replay the day into Kafka</button>
+        <button data-a="stop-replay" type="button"><i class="ico stop" aria-hidden="true"></i>Stop</button>
       </div>
       <div class="row">
-        <button data-a="start-live" type="button">▶ live_trips</button>
-        <button data-a="stop-live" type="button">⏸ Pause it (watch the lag)</button>
-        <button data-a="start-lake" type="button">▶ lake_sink</button>
+        <button data-a="start-live" type="button"><i class="ico play" aria-hidden="true"></i>live_trips</button>
+        <button data-a="stop-live" type="button"><i class="ico pause" aria-hidden="true"></i>Pause it (watch the lag)</button>
+        <button data-a="start-lake" type="button"><i class="ico play" aria-hidden="true"></i>lake_sink</button>
       </div>
       <div class="row">
-        <button class="primary" data-a="batch" type="button">▶ Run the batch</button>
-        <button data-a="reset" type="button">⟲ Clean start</button>
+        <button class="primary" data-a="batch" type="button"><i class="ico play" aria-hidden="true"></i>Run the batch</button>
+        <button data-a="reset" type="button">Clean start</button>
       </div>
       <div class="row">
         <button data-a="fallback" type="button">No Kafka: same logic from the file</button>
-        <button data-a="stop-fallback" type="button">■</button>
+        <button data-a="stop-fallback" type="button"><i class="ico stop" aria-hidden="true"></i>Stop</button>
       </div>
       <div class="row">
         <label for="token">Control key</label>
@@ -178,12 +185,13 @@ pre.code .ln{color:var(--muted);user-select:none;display:inline-block;width:3.2e
       <p class="msg" id="msg" role="status"></p>
     </div>
   </section>
-  <p class="note">Click any node to see the real code it runs.</p>
+  <p class="note">Click any node to see the real code it runs; the source nodes also show their raw data.</p>
 </div>
 
 <dialog id="dlg" aria-labelledby="dlg-title">
   <div class="dlg-head"><h3 id="dlg-title"></h3><button type="button" id="dlg-close">Close</button></div>
   <div class="tabs" id="dlg-tabs" role="tablist"></div>
+  <p class="dlg-cap" id="dlg-cap" hidden></p>
   <pre class="code" id="dlg-code" dir="ltr"></pre>
 </dialog>
 
@@ -371,27 +379,33 @@ document.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",asyn
     const r=await fetch(`api/control/${a}?${q}`,{method:"POST",headers:{"X-Admin-Token":$("token").value}});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.detail||r.status);
-    $("msg").textContent=b.textContent.trim()+" ✓";
+    $("msg").textContent=b.textContent.trim()+": done";
     if(a==="reset"){$("feed").innerHTML='<li class="empty">Clean start. Start live_trips, then the replay.</li>';tripsSeen=0;
       ALERTS.clear();$("alerts").innerHTML='<li class="empty">No alerts yet.</li>'}
   }catch(e){$("msg").className="msg err";$("msg").textContent="Refused: "+e.message}
 }));
 
 // ---- code drawer
+// source nodes open on their raw data (real rows from data/inbox), then the code that reads it
 async function openCode(n){
-  const d=$("dlg"); $("dlg-title").textContent=n.label; $("dlg-tabs").innerHTML=""; $("dlg-code").textContent="…";
+  const d=$("dlg"), pre=$("dlg-code"), cap=$("dlg-cap");
+  $("dlg-title").textContent=n.label; $("dlg-tabs").innerHTML=""; pre.className="code"; pre.textContent="…"; cap.hidden=true;
   d.showModal();
-  try{
-    const files=await (await fetch("api/code/"+n.id)).json();
-    const show=f=>{
-      $("dlg-tabs").querySelectorAll("button").forEach(x=>x.setAttribute("aria-selected",x.dataset.k===f.file+f.function));
-      $("dlg-code").innerHTML=f.source.split("\n").map((l,i)=>`<span class="ln">${f.line+i}</span>${l.replace(/&/g,"&amp;").replace(/</g,"&lt;")}`).join("\n");
-    };
-    files.forEach((f,i)=>{const b=document.createElement("button");b.type="button";b.role="tab";b.dir="ltr";b.dataset.k=f.file+f.function;
-      b.textContent=f.file+(f.function?" · "+f.function+"()":"");b.onclick=()=>show(f);$("dlg-tabs").appendChild(b);if(i===0)show(f)});
-  }catch(e){$("dlg-code").textContent="No code for this node"}
+  const tabs=[];
+  if(G.raw&&G.raw[n.id]){try{const r=await fetch("api/sample/"+n.id);if(r.ok)(await r.json()).forEach(x=>tabs.push({k:"raw:"+x.id,label:x.title,raw:x}))}catch(_){}}
+  try{const r=await fetch("api/code/"+n.id);if(r.ok)(await r.json()).forEach(f=>tabs.push({k:f.file+f.function,label:f.file+(f.function?" · "+f.function+"()":""),code:f}))}catch(_){}
+  if(!tabs.length){pre.textContent="No code for this node";return}
+  const show=t=>{
+    $("dlg-tabs").querySelectorAll("button").forEach(x=>x.setAttribute("aria-selected",x.dataset.k===t.k));
+    if(t.raw){cap.textContent=t.raw.caption;cap.hidden=false;pre.className="code raw";pre.textContent=t.raw.text;return}
+    const f=t.code; cap.hidden=true; pre.className="code";
+    pre.innerHTML=f.source.split("\n").map((l,i)=>`<span class="ln">${f.line+i}</span>${l.replace(/&/g,"&amp;").replace(/</g,"&lt;")}`).join("\n");
+  };
+  tabs.forEach((t,i)=>{const b=document.createElement("button");b.type="button";b.role="tab";b.dir="ltr";b.dataset.k=t.k;
+    b.textContent=t.label;b.onclick=()=>show(t);$("dlg-tabs").appendChild(b);if(i===0)show(t)});
 }
 $("dlg-close").onclick=()=>$("dlg").close();
+$("dlg").addEventListener("click",e=>{if(e.target===$("dlg"))$("dlg").close()});   // a click outside the panel (Esc closes it too)
 
 init();
 })();

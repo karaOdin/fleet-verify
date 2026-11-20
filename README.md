@@ -94,6 +94,8 @@ pytest -q
 - `test_live_matches_batch.py`: replays the day point by point through the stream logic and requires
   exactly the trips the batch finds.
 - `test_alerts.py`: alert counts of 19 Nov, 22606's school transport after 14:10, layovers are not off route.
+- `test_viz_security.py`, `test_viz_english.py`, `test_viz_samples.py`: controls need the token, the UI is English,
+  the raw samples are public and carry no person field, token or Arabic text.
 - `test_kafka_e2e.py` (needs a broker): two hours of 19 Nov through Kafka; trips equal the batch's, alerts equal the pure rules.
 - `test_viz_browser.py` (needs the page running): the workshop run clicked in headless Chromium, screenshots in `docs/screens/`.
   `pip install playwright && python -m playwright install chromium`.
@@ -135,7 +137,10 @@ uvicorn viz.server:app --port 8000        # http://localhost:8000
 One page (English, LTR) with every node of the system. Terminal and place names are shown by their `name_en` (`config/terminals.json`, `layovers` in `config/settings.json`); `name_en` is display only and stays out of `settings_hash`. Each node reads its state from the real system:
 heartbeats of the stream apps (`data/state/*.json`), Kafka end offsets and consumer lag,
 the Dagster outputs in `data/warehouse`, PostgreSQL. Click a node to see the code it runs
-(read from the source files, so it is always the code that actually runs).
+(read from the source files, so it is always the code that actually runs). The source nodes (Replay / Traccar, CloudRoutes API,
+raw_positions, road_papers, route_fit) open first on their raw data: 8 GPS rows of one device as stored, one road
+paper (paper 6477: its directions are written the other way round to the GPS), and its line's terminals; read from
+`data/inbox` only (`viz/samples.py`), public, filtered by allow-list.
 
 Buttons need the header `X-Admin-Token: $VIZ_ADMIN_TOKEN`. Without the variable every control request is refused,
 from any address: behind a reverse proxy every request comes from 127.0.0.1, so the client address never counts.

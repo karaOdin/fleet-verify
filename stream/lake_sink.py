@@ -10,6 +10,8 @@ pipeline drops the repeats.
 from __future__ import annotations
 
 import json
+import signal
+import sys
 import time
 from collections import defaultdict
 
@@ -23,6 +25,9 @@ FLUSH_S, FLUSH_N = 30, 20_000
 
 
 def main():
+    # docker stop sends SIGTERM to PID 1: leave through `finally`, so close() takes the consumer out of its
+    # group at once (otherwise the broker keeps it for the session timeout and the group cannot be deleted)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     c = Consumer({"bootstrap.servers": BROKER, "group.id": "lake-sink", "enable.auto.commit": False,
                   "auto.offset.reset": "earliest"})
     c.subscribe([POSITIONS])

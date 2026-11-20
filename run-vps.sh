@@ -4,7 +4,8 @@
 #   ./run-vps.sh up                 build if needed and start (kafka, postgres, viz, lake-sink)
 #   ./run-vps.sh stop               stop every fleet container (volumes and data kept)
 #   ./run-vps.sh reset              back to the start of the demo: stops what the page started, clears the
-#                                   live state, day 19's results and the Kafka topics (tools/reset_demo --kafka)
+#                                   live state, day 19's results, the Kafka topics and every consumer group's
+#                                   offsets (tools/reset_demo --kafka)
 #   ./run-vps.sh dagster start|stop the Dagster web UI on 127.0.0.1:3001, only while you need it
 #   ./run-vps.sh status             containers, published ports, memory (docker stats)
 #   ./run-vps.sh logs [service]     follow the logs
@@ -33,8 +34,10 @@ case "${1:-}" in
   stop|down)
     "${DC[@]}" --profile dagster stop ;;
   reset)
+    "${DC[@]}" stop lake-sink         # a group with a running consumer cannot be deleted
     "${DC[@]}" restart viz            # ends replay / live_trips / fallback started from the page
-    "${DC[@]}" exec -T viz python -m tools.reset_demo --kafka
+    "${DC[@]}" exec -T viz python -m tools.reset_demo --kafka    # topics recreated, every consumer group deleted
+    "${DC[@]}" start lake-sink
     wait_viz ;;
   dagster)
     case "${2:-}" in
