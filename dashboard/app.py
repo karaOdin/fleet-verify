@@ -16,13 +16,14 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from stream.common import BROKER, DATA, TRIP_EVENTS  # noqa: E402
+from fleet.settings import place_en  # noqa: E402
 
 WH = DATA / "warehouse"
-STATUS = {"ok": "✅ مؤكدة", "ok_dep": "✅ الانطلاق مؤكد", "diff": "⚠️ الوقت مختلف",
-          "dup": "🔁 بلا رحلة مستقلة", "missing": "❌ غير موجودة", "extra": "➕ بلا تصريح", "nogps": "— بلا GPS"}
+STATUS = {"ok": "✅ confirmed", "ok_dep": "✅ departure confirmed", "diff": "⚠️ time differs",
+          "dup": "🔁 no separate trip", "missing": "❌ not found", "extra": "➕ not declared", "nogps": "— no GPS"}
 
-st.set_page_config(page_title="تحقق الأسطول", layout="wide")
-daily, live = st.tabs(["التقرير اليومي", "مباشر"])
+st.set_page_config(page_title="Fleet verification", layout="wide")
+daily, live = st.tabs(["Daily report", "Live"])
 
 
 def days():
@@ -33,9 +34,9 @@ def days():
 with daily:
     ds = days()
     if not ds:
-        st.info("لا توجد تقارير بعد. شغّل المهمة اليومية في Dagster أولًا.")
+        st.info("No reports yet. Run the daily job in Dagster first.")
     else:
-        day = st.selectbox("اليوم", ds)
+        day = st.selectbox("Day", ds)
         rep = pl.read_parquet(WH / "bus_day_report" / f"{day}.parquet")
         ver = pl.read_parquet(WH / "trip_verification" / f"{day}.parquet")
         km = pl.read_parquet(WH / "km_report" / f"{day}.parquet")
@@ -43,34 +44,34 @@ with daily:
         decl = ver.filter(pl.col("paper_id").is_not_null())
         c = dict(ver.group_by("status").len().iter_rows())
         cols = st.columns(6)
-        cols[0].metric("رحلات مصرّح بها", decl.height)
-        cols[1].metric("مؤكدة", c.get("ok", 0) + c.get("ok_dep", 0))
-        cols[2].metric("الوقت مختلف", c.get("diff", 0))
-        cols[3].metric("غير موجودة", c.get("missing", 0))
-        cols[4].metric("كم كلي", f"{km['total_km'].sum():,.0f}")
-        cols[5].metric("تجاري", f"{100 * km['commercial_km'].sum() / km['total_km'].sum():.0f}%")
+        cols[0].metric("Declared trips", decl.height)
+        cols[1].metric("Confirmed", c.get("ok", 0) + c.get("ok_dep", 0))
+        cols[2].metric("Time differs", c.get("diff", 0))
+        cols[3].metric("Not found", c.get("missing", 0))
+        cols[4].metric("Total km", f"{km['total_km'].sum():,.0f}")
+        cols[5].metric("Commercial", f"{100 * km['commercial_km'].sum() / km['total_km'].sum():.0f}%")
 
-        st.subheader("كل حافلة")
+        st.subheader("Every bus")
         st.dataframe(rep.drop("work_date", "settings_hash").sort("bus"), width="stretch", hide_index=True)
 
-        st.subheader("رحلات حافلة")
-        bus = st.selectbox("الحافلة", sorted(ver["bus"].unique().to_list()))
+        st.subheader("Trips of one bus")
+        bus = st.selectbox("Bus", sorted(ver["bus"].unique().to_list()))
         b = (ver.filter(pl.col("bus") == bus)
-             .select(pl.col("paper_id").alias("الورقة"), pl.col("shift").alias("الفترة"), pl.col("direction").alias("المكتوب"),
-                     pl.format("{} → {}", "dep_time", "arr_time").alias("المصرّح به"),
+             .select(pl.col("paper_id").alias("Paper"), pl.col("shift").alias("Shift"), pl.col("direction").alias("Written direction"),
+                     pl.format("{} → {}", "dep_time", "arr_time").alias("Declared"),
                      pl.format("{} → {}", "gps_dep_time", "gps_arr_time").alias("GPS"),
-                     pl.col("actual_direction").alias("الاتجاه الفعلي"),
-                     pl.col("delta_dep_min").alias("فرق الانطلاق"), pl.col("delta_arr_min").alias("فرق الوصول"),
-                     pl.col("tickets").alias("التذاكر"), pl.col("status").replace_strict(STATUS).alias("الحالة")))
+                     pl.col("actual_direction").map_elements(place_en, return_dtype=pl.Utf8).alias("Actual direction"),
+                     pl.col("delta_dep_min").alias("Departure diff (min)"), pl.col("delta_arr_min").alias("Arrival diff (min)"),
+                     pl.col("tickets").alias("Tickets"), pl.col("status").replace_strict(STATUS).alias("Status")))
         st.dataframe(b, width="stretch", hide_index=True)
 
-        st.subheader("هوية الحافلات (ER)")
+        st.subheader("Bus identity (ER)")
         st.dataframe(ident.filter(pl.col("verdict") != "confirmed").drop("work_date", "settings_hash"),
                      width="stretch", hide_index=True)
 
 with live:
     st.caption(f"Kafka {BROKER} · topic {TRIP_EVENTS}")
-    if st.toggle("تشغيل", value=False):
+    if st.toggle("Run", value=False):
         from confluent_kafka import Consumer, TopicPartition
 
         if "events" not in st.session_state:
@@ -88,10 +89,11 @@ with live:
                 st.session_state.events.append(json.loads(m.value()))
         ev = st.session_state.events[-200:]
         if ev:
-            df = pl.DataFrame(ev).select("day", "bus", "event", "dep_time", "from_name", "arr_time", "to_name", "minutes")
-            st.metric("أنصاف رحلات اليوم", sum(e["event"] == "trip" for e in st.session_state.events))
+            df = (pl.DataFrame(ev).select("day", "bus", "event", "dep_time", "from_name", "arr_time", "to_name", "minutes")
+                  .with_columns(pl.col("from_name", "to_name").map_elements(place_en, return_dtype=pl.Utf8)))
+            st.metric("Half-trips today", sum(e["event"] == "trip" for e in st.session_state.events))
             st.dataframe(df.reverse(), width="stretch", hide_index=True)
         else:
-            st.info("لا أحداث بعد. شغّل stream.replay أو stream.traccar_poll ثم stream.live_trips.")
+            st.info("No events yet. Start stream.replay or stream.traccar_poll, then stream.live_trips.")
         time.sleep(2)
         st.rerun()

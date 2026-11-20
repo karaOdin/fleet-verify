@@ -1,11 +1,11 @@
 {
-  "_note": "Display names for each line's two terminals: S = start geofence, E = end geofence, as drawn in CloudRoutes. Taken from the nearest registered stop; edit here when a stop is renamed.",
-  "04": {"S": "لاروكاد", "E": "الغرب (محطة البنزين)"},
-  "05": {"S": "لاروكاد", "E": "القطب الجامعي"},
-  "10": {"S": "المحطة القديمة", "E": "حي 800 مسكن"},
-  "11": {"S": "المحطة الجديدة", "E": "القطب الجامعي"},
-  "12": {"S": "القطب الجامعي", "E": "أولاد أحمد"},
-  "16": {"S": "لاروكاد", "E": "المويلحة (عدل)"},
-  "17": {"S": "القطب الجامعي", "E": "حي 800 مسكن"},
-  "18": {"S": "الطرف الجنوبي", "E": "القطب الجامعي"}
+  "_note": "Display names for each line's two terminals: S = start geofence, E = end geofence, as drawn in CloudRoutes. Taken from the nearest registered stop; edit here when a stop is renamed. name_en = the English display name (UI only); S/E stay the names the data uses.",
+  "04": {"S": "لاروكاد", "E": "الغرب (محطة البنزين)", "name_en": {"S": "La Rocade", "E": "West (fuel station)"}},
+  "05": {"S": "لاروكاد", "E": "القطب الجامعي", "name_en": {"S": "La Rocade", "E": "University Pole"}},
+  "10": {"S": "المحطة القديمة", "E": "حي 800 مسكن", "name_en": {"S": "Old Station", "E": "800 Logements"}},
+  "11": {"S": "المحطة الجديدة", "E": "القطب الجامعي", "name_en": {"S": "New Station", "E": "University Pole"}},
+  "12": {"S": "القطب الجامعي", "E": "أولاد أحمد", "name_en": {"S": "University Pole", "E": "Ouled Ahmed"}},
+  "16": {"S": "لاروكاد", "E": "المويلحة (عدل)", "name_en": {"S": "La Rocade", "E": "El Mouilha (AADL)"}},
+  "17": {"S": "القطب الجامعي", "E": "حي 800 مسكن", "name_en": {"S": "University Pole", "E": "800 Logements"}},
+  "18": {"S": "الطرف الجنوبي", "E": "القطب الجامعي", "name_en": {"S": "South End", "E": "University Pole"}}
 }

@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 from stream.common import ALERTS, DATA, POSITIONS, TRIP_EVENTS  # noqa: E402
 from viz import kafka_metrics  # noqa: E402
 from viz.graph import NODES, EDGES  # noqa: E402
+from fleet.settings import place_en  # noqa: E402
 
 STATE = DATA / "state"
 WH = DATA / "warehouse"
@@ -64,11 +65,11 @@ def _bus_alias() -> dict[str, str]:
         buses = sorted({str(b["bus"]) for b in cloudroutes.registry()})
     except Exception:
         buses = []
-    return {b: f"حافلة {_letters(i)}" for i, b in enumerate(buses)}
+    return {b: f"Bus {_letters(i)}" for i, b in enumerate(buses)}
 
 
 ALIAS = _bus_alias()
-show_bus = (lambda b: ALIAS.get(str(b), "حافلة ?")) if ANON else (lambda b: f"حافلة {b}")
+show_bus = (lambda b: ALIAS.get(str(b), "Bus ?")) if ANON else (lambda b: f"Bus {b}")
 
 
 # ---------------- processes the page can start and stop ----------------
@@ -293,14 +294,14 @@ def snapshot() -> dict:
     }
 
 
-ALERT_LABEL = {"off_route": "خارج المسار", "idle_outside_terminal": "متوقف طويلًا خارج المحطة", "silent": "الجهاز صامت"}
+ALERT_LABEL = {"off_route": "Off route", "idle_outside_terminal": "Long stop outside a terminal", "silent": "Device silent"}
 
 
 def _public_trip(e: dict) -> dict:
     """What a public viewer sees of a trip event: no device id, the bus anonymised."""
     return {"bus": show_bus(e.get("bus")), "event": e["event"], "line": e.get("line"),
-            "dep": e.get("dep_time"), "arr": e.get("arr_time"), "from": e.get("from_name"),
-            "to": e.get("to_name"), "minutes": e.get("minutes")}
+            "dep": e.get("dep_time"), "arr": e.get("arr_time"), "from": e.get("from_name_en") or place_en(e.get("from_name")),
+            "to": e.get("to_name_en") or place_en(e.get("to_name")), "minutes": e.get("minutes")}
 
 
 def _public_alert(e: dict) -> dict:

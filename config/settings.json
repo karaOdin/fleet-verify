@@ -17,8 +17,8 @@
              "rewind_min": 60},
   "layovers": {
     "_note": "Places where buses of a line wait between rounds, away from the terminal geofences: standing there is not idle and not off route. Seeded from 19 Nov 2026 (29 waits on line 04, 25 on line 05, all buses of both lines). lat/lon = centre, r = radius in metres.",
-    "04": [{"name": "لاروكاد — موقف الانتظار", "lat": 35.6965, "lon": 4.5672, "r": 120}],
-    "05": [{"name": "لاروكاد — موقف الانتظار", "lat": 35.6965, "lon": 4.5672, "r": 120}]
+    "04": [{"name": "لاروكاد — موقف الانتظار", "name_en": "La Rocade — layover", "lat": 35.6965, "lon": 4.5672, "r": 120}],
+    "05": [{"name": "لاروكاد — موقف الانتظار", "name_en": "La Rocade — layover", "lat": 35.6965, "lon": 4.5672, "r": 120}]
   },
   "identity": {"trip_tol_min": 10, "confirm": 0.5, "alt_min": 0.6, "alt_margin": 0.3, "unique_margin": 0.2, "off_network_max_f": 0.1}
 }

@@ -79,7 +79,7 @@ of where buses wait between rounds, seeded from 19 Nov).
 Nothing counts before the device first reaches a terminal of its line, nor at its overnight parking place.
 `python -m tools.bench_live --mode file|kafka` measures how many positions per second `live_trips` handles.
 `silent` runs on the stream's own clock (latest fix time), one clock per Kafka partition, so a replay behaves
-like real time. Alerts are for the dispatcher to look at (يحتاج نظر المراقب), never a sanction.
+like real time. Alerts are for the dispatcher to look at ("For the dispatcher to review"), never a sanction.
 `docs/alerts-2026-11-19.md` lists every alert of 19 Nov and explains the rules against that day.
 
 ## Tests
@@ -131,7 +131,7 @@ ER margins). Each output row carries `settings_hash`, so a report always says wh
 uvicorn viz.server:app --port 8000        # http://localhost:8000
 ```
 
-One page with every node of the system. Each node reads its state from the real system:
+One page (English, LTR) with every node of the system. Terminal and place names are shown by their `name_en` (`config/terminals.json`, `layovers` in `config/settings.json`); `name_en` is display only and stays out of `settings_hash`. Each node reads its state from the real system:
 heartbeats of the stream apps (`data/state/*.json`), Kafka end offsets and consumer lag,
 the Dagster outputs in `data/warehouse`, PostgreSQL. Click a node to see the code it runs
 (read from the source files, so it is always the code that actually runs).
@@ -143,14 +143,14 @@ reaches the server or its logs, the page keeps the token in the browser), `/#loc
 
 | Button | What happens |
 |---|---|
-| إعادة اليوم في Kafka | `stream.replay` sends the day into `fleet.positions` from `VIZ_DEMO_FROM` at the chosen speed |
+| Replay the day into Kafka | `stream.replay` sends the day into `fleet.positions` from `VIZ_DEMO_FROM` at the chosen speed |
 | live_trips ▶ / ⏸ | start or stop the stream processor; stopped, the lag on its node grows; restarted, it catches up |
 | lake_sink ▶ | positions to the Parquet lake |
-| تشغيل الـbatch | runs the Dagster job for the day; asset nodes light up as each step runs, then the four checks |
-| بداية نظيفة | new consumer group, empty feed |
-| بدون Kafka | the same live logic straight from the file, paced: the fallback if Kafka fails on stage |
+| Run the batch | runs the Dagster job for the day; asset nodes light up as each step runs, then the four checks |
+| Clean start | new consumer group, empty feed |
+| No Kafka | the same live logic straight from the file, paced: the fallback if Kafka fails on stage |
 
-Bus numbers are shown as "حافلة A, B, …" while `VIZ_ANONYMIZE=1`.
+Bus numbers are shown as "Bus A, B, …" while `VIZ_ANONYMIZE=1`.
 
 ## Deploy on a VPS
 

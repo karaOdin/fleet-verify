@@ -91,5 +91,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
     for line in reset(args.day, args.kafka):
         print("-", line)
-    print("\nNow: restart the viz page (or press بداية نظيفة). The top lane is idle, the bottom lane is grey for",
+    print("\nNow: restart the viz page (or press Clean start). The top lane is idle, the bottom lane is grey for",
           args.day, "and Superset shows the other days.")

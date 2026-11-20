@@ -1,6 +1,6 @@
 """The workshop run, clicked in a real browser (headless Chromium):
-بداية نظيفة → live_trips ▶ → إعادة اليوم → trips and an alert in the feed → ⏸ (lag rises) → ▶ (lag falls)
-→ تشغيل الـbatch → the four checks. A screenshot of each step goes to docs/screens/.
+Clean start → live_trips ▶ → Replay the day → trips and an alert in the feed → ⏸ (lag rises) → ▶ (lag falls)
+→ Run the batch → the four checks. A screenshot of each step goes to docs/screens/.
 
 Skipped unless the page answers at VIZ_URL (default http://localhost:8000) with Kafka up.
 It drives the real demo: it starts with a clean start and leaves the day's batch results in place,
@@ -56,7 +56,7 @@ def _lag_on_node(page) -> int:
     for i in range(nodes.count()):
         if nodes.nth(i).get_attribute("aria-label") == "live_trips":
             text = nodes.nth(i).locator("text.metric").text_content() or ""
-            m = re.search(r"تأخر ([\d,]+)", text)
+            m = re.search(r"lag ([\d,]+)", text)
             return int(m.group(1).replace(",", "")) if m else 0
     raise AssertionError("live_trips node not found")
 
@@ -74,7 +74,7 @@ def test_workshop_run_in_browser():
         # with live_trips for the CPU (the dots respect the viewer's motion setting anyway)
         page = browser.new_page(viewport={"width": 1366, "height": 900}, locale="ar", reduced_motion="reduce")
         page.goto(URL + "/", wait_until="domcontentloaded")
-        expect(page.locator("#k-txt")).to_have_text("Kafka متصل", timeout=20_000)
+        expect(page.locator("#k-txt")).to_have_text("Kafka connected", timeout=20_000)
         # a viewer sees no controls; a wrong token does not show them either
         expect(page.locator("#ctl")).to_be_hidden()
         page.goto(URL + "/#admin=not-the-token", wait_until="domcontentloaded")
@@ -106,8 +106,9 @@ def test_workshop_run_in_browser():
         expect(page.locator("#feed li:not(.empty)").first).to_be_visible(timeout=120_000)
         expect(page.locator("#alerts li:not(.empty)").first).to_be_visible(timeout=120_000)
         _wait(lambda: page.locator("#feed li:not(.empty)").count() >= 3, 60, what="three trips in the feed")
-        assert "يحتاج نظر المراقب" in page.locator(".panels").inner_text()
-        assert "مخالفة" not in page.locator("#alerts").inner_text()
+        assert "For the dispatcher to review" in page.locator(".panels").inner_text()
+        assert "violation" not in page.locator("#alerts").inner_text().lower()
+        assert not re.search(r"[\u0600-\u06FF]", page.locator("body").inner_text()), "Arabic text on the page"
         page.screenshot(path=str(SHOTS / "02-trips-and-alerts.png"), full_page=True)
 
         # pause: positions keep arriving, nobody reads them, the lag on the node rises

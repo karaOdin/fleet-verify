@@ -58,7 +58,7 @@ def _account(value: dict, events: list[dict], mode: str) -> None:
 def _alert_out(e: dict, day: str) -> dict:
     a = ASSIGN.get(e["device_id"], {})
     out = {**e, "bus": a.get("bus"), "day": day, "start_time": hhmm(e["start"]), "at_time": hhmm(e["at"]),
-           "note": "يحتاج نظر المراقب"}          # a recommendation for the dispatcher, never a sanction
+           "note": "for the dispatcher to review"}   # a recommendation for the dispatcher, never a sanction
     return out
 
 
@@ -109,6 +109,8 @@ def step(value: dict, st: dict | None, partition: int = 0) -> tuple[list[dict], 
         names = TERM.get(line.code, {})
         out.append({**e, "bus": a["bus"], "day": day, "dep_time": hhmm(e["dep"]), "arr_time": hhmm(e["arr"]),
                     "from_name": names.get(e["frm"], e["frm"]), "to_name": names.get(e["to"], e["to"]),
+                    "from_name_en": names.get("name_en", {}).get(e["frm"], e["frm"]),   # display only
+                    "to_name_en": names.get("name_en", {}).get(e["to"], e["to"]),
                     "minutes": round((e["arr"] - e["dep"]) / 60)})
     return out, st
 
