@@ -138,6 +138,12 @@ cd ~/fleet-verify
 ./run-vps.sh stop              # stop everything; volumes and data stay
 ```
 
+Clean start on the page gives the same state as `reset`, without restarting anything (about 5 s): it pauses
+the lake-sink container (`data/control/lake_sink.pause`), so its consumer group can be deleted, and resumes it.
+Measured: during a ×120 replay (40,547 msgs, 24,679 lake rows), one minute after Clean start the page shows
+0 msgs and an empty lake. The batch always reads the full day (`FLEET_POSITIONS_PREFER=inbox`): pressed half-way
+through a replay (lake 171,871 rows) it gives 290,937 positions, 661 GPS trips, 6,907.5 km.
+
 `reset` stops lake-sink, restarts viz (ends the replay and live_trips the page started), then
 `tools.reset_demo --kafka`: live state, day 19's lake and results (warehouse and PostgreSQL) are cleared, the Kafka
 topics are recreated empty and every consumer group's offsets are deleted. It keeps `data/inbox`, Dagster history,

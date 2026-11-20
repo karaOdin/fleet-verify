@@ -159,7 +159,7 @@ reaches the server or its logs, the page keeps the token in the browser), `/#loc
 | live_trips ▶ / ⏸ | start or stop the stream processor; stopped, the lag on its node grows; restarted, it catches up |
 | lake_sink ▶ | positions to the Parquet lake |
 | Run the batch | runs the Dagster job for the day; asset nodes light up as each step runs, then the four checks |
-| Clean start | new consumer group, empty feed, and the day’s batch results removed (warehouse, PostgreSQL; the latest resolved identity is kept), so Run the batch fills the page and the dashboard again |
+| Clean start | the state `./run-vps.sh prepare` gives (a few seconds): replay and live_trips stopped, the Kafka topics empty, every consumer group deleted, the day’s lake and batch results removed; the latest resolved identity kept. Run the batch then fills the page and the dashboard again |
 | No Kafka | the same live logic straight from the file, paced: the fallback if Kafka fails on stage |
 
 Bus numbers are shown as "Bus A, B, …" while `VIZ_ANONYMIZE=1`.
