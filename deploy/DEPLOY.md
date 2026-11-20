@@ -6,7 +6,8 @@ The old Traccar instance on this host stays stopped.
 
 ```
 browser ──https──▶ nginx (Ploi) ──▶ 127.0.0.1:8000  fleet-viz          pipeline.devcloud.dz (public, controls need the token)
-                                └─▶ 127.0.0.1:3001  fleet-dagster-web  dag-work.devcloud.dz (password)
+                                ├─▶ 127.0.0.1:3001  fleet-dagster-web  dag-work.devcloud.dz (password)
+                                └─▶ 127.0.0.1:8501  fleet-dashboard    dash.devcloud.dz (same password)
                    docker network "fleet": fleet-kafka, fleet-postgres, fleet-lake-sink  (no published ports)
 ```
 
@@ -19,7 +20,8 @@ Kafka and PostgreSQL publish no ports at all.
 |---|---|---|
 | `pipeline.devcloud.dz` | A | `95.111.253.252` |
 | `dag-work.devcloud.dz` | A | `95.111.253.252` |
-| (optional) both names | AAAA | `2a02:c207:2245:6966::1` (nginx already listens on `[::]:443`) |
+| `dash.devcloud.dz` | A | `95.111.253.252` |
+| (optional) all three names | AAAA | `2a02:c207:2245:6966::1` (nginx already listens on `[::]:443`) |
 
 Then in Ploi: one site per name, a Let's Encrypt certificate each.
 
@@ -80,11 +82,39 @@ Password files, outside the repository (nginx workers run as `ploi`):
 
 | File | Mode | Content |
 |---|---|---|
-| `/home/ploi/fleet-secrets/dagster.htpasswd` | 640 ploi:ploi | `fleet:$apr1$…` (`openssl passwd -apr1`) |
+| `/home/ploi/fleet-secrets/dagster.htpasswd` | 640 ploi:ploi | `fleet:$apr1$…` (`openssl passwd -apr1`), used by the Dagster and dashboard sites |
 | `/home/ploi/fleet-secrets/dagster-password.txt` | 600 ploi:ploi | user and password, for you |
 
 New password: `P=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20); printf 'fleet:%s\n' "$(openssl passwd -apr1 "$P")" > /home/ploi/fleet-secrets/dagster.htpasswd`
 (and update the 600 file). nginx reads the file on each request: no reload needed.
+
+### dash.devcloud.dz → 127.0.0.1:8501 (same password as Dagster)
+
+```nginx
+    # dash.devcloud.dz -> Streamlit dashboard (127.0.0.1:8501), same password as Dagster
+    location / {
+        auth_basic           "Fleet dashboard";
+        auth_basic_user_file /home/ploi/fleet-secrets/dagster.htpasswd;
+
+        proxy_pass         http://127.0.0.1:8501;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;      # Streamlit talks over a websocket (/_stcore/stream)
+        proxy_set_header   Connection        "upgrade";
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_buffering    off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+```
+
+Checked on a throwaway nginx: 401 without a password and with a wrong one; 200 with it (`/_stcore/health` says ok);
+101 on the websocket upgrade of `/_stcore/stream`. The Streamlit daily report reads the same warehouse the batch
+writes (the `fleet-data` volume): after a batch it shows 19 Nov (668 declared, 416 confirmed, 6,907 km, 75 %
+commercial); after `./run-vps.sh reset` it says "No reports yet" until the batch runs again. It shows real bus
+numbers (not anonymised): it stays behind the password.
 
 Without the dagster site, an SSH tunnel works too: `ssh -L 3001:127.0.0.1:3001 ploi@95.111.253.252`, then
 http://localhost:3001. (The original plan also tunnelled Kafka UI on 8081: it was dropped from this server.)
@@ -93,7 +123,7 @@ http://localhost:3001. (The original plan also tunnelled Kafka UI on 8081: it wa
 
 ```bash
 cd ~/fleet-verify
-./run-vps.sh up                # build if needed, start kafka, postgres, viz, lake-sink
+./run-vps.sh up                # build if needed, start kafka, postgres, viz, lake-sink, dashboard
 ./run-vps.sh prepare           # before the talk: up, Dagster UI on, demo reset, status
 ./run-vps.sh reset             # back to the start of the demo (about 50 s)
 ./run-vps.sh dagster start     # / stop: the Dagster UI only when needed (~270-310 MiB)
@@ -127,7 +157,7 @@ panel then shows. Viewers never see it. `https://pipeline.devcloud.dz/#lock` for
 
 Each container has a `mem_limit` (= `memswap_limit`): kafka 900 MiB (heap 384 MiB; the rest is page cache and off-heap), postgres 192 MiB
 (shared_buffers 64MB, max_connections 20), viz 1052 MiB (the replay, live_trips and the batch run inside it),
-lake-sink 256 MiB, dagster-web 512 MiB (only on demand). Measured with `docker stats`:
+lake-sink 256 MiB, dashboard 384 MiB, dagster-web 512 MiB (only on demand). Measured with `docker stats`:
 
 | Moment | Total |
 |---|---|
@@ -136,15 +166,16 @@ lake-sink 256 MiB, dagster-web 512 MiB (only on demand). Measured with `docker s
 | replay ×120 | 818 MiB |
 | batch | 1,011 MiB |
 | the whole browser test (replay, pause, resume, batch) | 1,137 MiB |
+| batch with the Dagster UI and the dashboard on (dashboard showing the results) | 1,434 MiB |
 
-With the Dagster UI on during the talk, expect about 1.45 GiB at the peak.
+With the Dagster UI and the dashboard on during the talk, expect about 1.45–1.6 GiB at the peak (a replay and a batch together).
 
 ## Morning checklist
 
 1. `ssh ploi@95.111.253.252`, `cd ~/fleet-verify && git pull` (if anything changed: `./run-vps.sh build`).
-2. `./run-vps.sh prepare`: five containers up, `127.0.0.1:8000` and `127.0.0.1:3001` only, total memory under 1 GiB.
+2. `./run-vps.sh prepare`: six containers up, `127.0.0.1:8000`, `127.0.0.1:3001` and `127.0.0.1:8501` only, total memory under 1 GiB.
 3. `curl -sS -o /dev/null -w "%{http_code}\n" https://pipeline.devcloud.dz/` → 200, and
-   `https://dag-work.devcloud.dz/` → 401 without the password.
+   `https://dag-work.devcloud.dz/` and `https://dash.devcloud.dz/` → 401 without the password.
 4. On the laptop: open `/#admin=<token>`; the control panel shows; the header reads "Kafka connected".
 5. Rehearse once: Clean start → live_trips → Replay ×120: the first alert (Bus R, since 06:24) appears at ~0:35,
    Bus R's 14:12 alert at ~4:30, the replay ends at ~9:17. Pause / resume, then Run the batch (~49 s to four green

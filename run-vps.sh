@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The fleet stack on the VPS (docker-compose.vps.yml, project "fleet", containers fleet-*).
 #
-#   ./run-vps.sh up                 build if needed and start (kafka, postgres, viz, lake-sink)
+#   ./run-vps.sh up                 build if needed and start (kafka, postgres, viz, lake-sink, dashboard)
 #   ./run-vps.sh prepare            before the talk: up, Dagster web UI on, demo reset, status
 #   ./run-vps.sh stop               stop every fleet container (volumes and data kept)
 #   ./run-vps.sh reset              back to the start of the demo: stops what the page started, clears the
@@ -28,10 +28,19 @@ wait_viz() {
   echo "viz did not answer on 127.0.0.1:8000 (./run-vps.sh logs viz)" >&2; return 1
 }
 
+wait_dashboard() {
+  for _ in $(seq 1 60); do
+    curl -fsS -o /dev/null http://127.0.0.1:8501/_stcore/health 2>/dev/null && { echo "dashboard: http://127.0.0.1:8501"; return; }
+    sleep 2
+  done
+  echo "dashboard did not answer on 127.0.0.1:8501 (./run-vps.sh logs dashboard)" >&2; return 1
+}
+
 case "${1:-}" in
   up)
     "${DC[@]}" up -d --build
-    wait_viz ;;
+    wait_viz
+    wait_dashboard ;;
   prepare)                          # before the talk
     "$0" up
     "$0" dagster start                # dag-work.devcloud.dz (password) during the talk; ~310 MiB more
@@ -55,7 +64,8 @@ case "${1:-}" in
   status)
     "${DC[@]}" --profile dagster ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'
     docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' \
-      $("${DC[@]}" --profile dagster ps -q) ;;
+      $("${DC[@]}" --profile dagster ps -q)
+    echo "page http://127.0.0.1:8000 · dashboard http://127.0.0.1:8501 · dagster http://127.0.0.1:3001 (when started)" ;;
   logs)
     shift; "${DC[@]}" logs -f --tail 100 "$@" ;;
   build)

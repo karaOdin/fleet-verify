@@ -32,7 +32,8 @@
 ## On the VPS before the talk
 
 `./run-vps.sh prepare`: starts the stack, starts the Dagster web UI (https://dag-work.devcloud.dz, user `fleet`,
-password in `/home/ploi/fleet-secrets/dagster-password.txt`), resets the demo, prints memory. Open the page once as
+password in `/home/ploi/fleet-secrets/dagster-password.txt`), the Streamlit dashboard (https://dash.devcloud.dz,
+same password; it shows the daily report after the batch), resets the demo, prints memory. Open the page once as
 `https://pipeline.devcloud.dz/#admin=<VIZ_ADMIN_TOKEN>` on the presenting laptop. Details: `deploy/DEPLOY.md`.
 
 ## Timing at ×120 from 05:30 (measured on the VPS)

@@ -170,7 +170,7 @@ The shared VPS (Ploi, nginx on 80/443 for other sites) runs `docker-compose.vps.
 
 ```bash
 cp .env.example .env      # POSTGRES_PASSWORD, VIZ_ADMIN_TOKEN, tokens
-./run-vps.sh up           # kafka, postgres, viz (127.0.0.1:8000), lake-sink
+./run-vps.sh up           # kafka, postgres, viz (127.0.0.1:8000), lake-sink, dashboard (127.0.0.1:8501)
 ./run-vps.sh stop         # stop everything, data kept
 ./run-vps.sh reset        # back to the start of the demo (tools.reset_demo --kafka)
 ./run-vps.sh dagster start|stop   # Dagster UI on 127.0.0.1:3001, only while needed

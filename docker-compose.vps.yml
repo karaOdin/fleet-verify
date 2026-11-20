@@ -2,11 +2,12 @@
 #
 # Every published port binds to 127.0.0.1 only. Docker-published ports bypass ufw, so nothing may bind 0.0.0.0.
 #   viz          127.0.0.1:8000   public through the host's nginx (pipeline.devcloud.dz, see deploy/DEPLOY.md)
-#   dagster-web  127.0.0.1:3001   on demand only (./run-vps.sh dagster start|stop), through an SSH tunnel
+#   dagster-web  127.0.0.1:3001   on demand only (./run-vps.sh dagster start|stop), dag-work.devcloud.dz (password)
+#   dashboard    127.0.0.1:8501   Streamlit daily report, dash.devcloud.dz (same password as Dagster)
 #   Kafka and PostgreSQL publish no ports: reachable only inside the compose network.
 #
 # Memory: a mem_limit on every container (memswap_limit equal, so the limit is RAM and not swap). The always-on
-# limits add up to 2,400 MiB; Kafka's 900 MiB holds a 384 MiB heap plus page cache the kernel can reclaim, and
+# limits add up to 2,784 MiB (with the dashboard); Kafka's 900 MiB holds a 384 MiB heap plus page cache the kernel can reclaim, and
 # measured use stays under the 2.2 GiB budget (run-vps.sh status). The batch runs inside viz. dagster-web
 # (512 MiB) is extra and only runs when asked for.
 # No kafka-ui, no dagster-daemon, no Superset on this server (3.8 GiB, shared).
@@ -89,6 +90,16 @@ services:
     memswap_limit: 512m
     ports: ["127.0.0.1:3001:3000"]
     command: dagster-webserver -h 0.0.0.0 -p 3000 -m pipeline.definitions
+
+  dashboard:                # Streamlit daily report: the warehouse the batch writes (same fleet-data volume)
+    <<: *app
+    container_name: fleet-dashboard
+    mem_limit: 384m
+    memswap_limit: 384m
+    ports: ["127.0.0.1:8501:8501"]
+    command: >-
+      streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+      --browser.gatherUsageStats false
 
 volumes:
   kafka-data:
